@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/mythologyli/zju-connect/internal/hook_func"
@@ -57,6 +59,11 @@ func (s *Stack) Run() {
 			buf := make([]byte, MTU+tun.PacketOffset)
 			n, err := s.rvpnConn.Read(buf)
 			if err != nil {
+				// Check if this is a fatal session error
+				if strings.Contains(err.Error(), "session refresh failed") {
+					log.Printf("Fatal: %v. Program will exit.", err)
+					os.Exit(1)
+				}
 				// RvpnConn.Read now handles reconnection internally
 				// This should rarely happen, but log it if it does
 				log.Printf("Unexpected error from RvpnConn.Read: %v", err)

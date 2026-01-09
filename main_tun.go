@@ -263,7 +263,7 @@ func main() {
 		if !useZJUDNS {
 			log.Println("Keep alive is disabled because ZJU DNS is disabled")
 		} else {
-			go service.KeepAlive(vpnResolver)
+			go service.KeepAlive(vpnClient, vpnResolver)
 		}
 	}
 

@@ -1,8 +1,10 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -52,6 +54,9 @@ type EasyConnectClient struct {
 	ipReverse []byte
 
 	sessionFile string // Path to session file for persistence
+
+	ipConn       io.ReadWriteCloser
+	ipConnCancel context.CancelFunc
 }
 
 // SetSessionFile sets the path for session persistence
@@ -126,9 +131,17 @@ func (c *EasyConnectClient) DNSServer() (string, error) {
 }
 
 func (c *EasyConnectClient) Setup() error {
+	return c.setup(false)
+}
+
+func (c *EasyConnectClient) SetupAuto() error {
+	return c.setup(true)
+}
+
+func (c *EasyConnectClient) setup(isAuto bool) error {
 	// Use username/password/(SMS code) to get the TwfID
 	if c.twfID == "" {
-		err := c.requestTwfID()
+		err := c.requestTwfID(isAuto)
 		if err != nil {
 			return err
 		}
@@ -158,7 +171,7 @@ func (c *EasyConnectClient) Setup() error {
 						c.testMultiLine = false
 						c.twfID = ""
 
-						return c.Setup()
+						return c.setup(isAuto)
 					}
 				}
 			}

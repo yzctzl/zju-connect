@@ -3,6 +3,8 @@ package gvisor
 import (
 	"errors"
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
@@ -185,6 +187,11 @@ func (s *Stack) Run() {
 		if err != nil {
 			if hook_func.IsTerminal() {
 				return
+			}
+			// Check if this is a fatal session error
+			if strings.Contains(err.Error(), "session refresh failed") {
+				log.Printf("Fatal: %v. Program will exit.", err)
+				os.Exit(1)
 			}
 			// RvpnConn.Read handles reconnection internally
 			// This should rarely happen, but log it if it does

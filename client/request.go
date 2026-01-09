@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -14,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -26,14 +28,17 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-var errSMSRequired = errors.New("SMS code required")
+var ErrSMSRequired = errors.New("SMS code required")
 var errTOTPRequired = errors.New("TOTP required")
 var errCertRequired = errors.New("cert required")
 
-func (c *EasyConnectClient) requestTwfID() error {
+func (c *EasyConnectClient) requestTwfID(isAuto bool) error {
 	err := c.loginAuthAndPsw()
 	if err != nil {
-		if errors.Is(err, errSMSRequired) {
+		if errors.Is(err, ErrSMSRequired) {
+			if isAuto {
+				return ErrSMSRequired
+			}
 			err = c.loginSMS()
 			if err != nil {
 				return err
@@ -155,7 +160,7 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 	if strings.Contains(buf.String(), "<NextService>auth/sms</NextService>") || strings.Contains(buf.String(), "<NextAuth>2</NextAuth>") {
 		log.Print("SMS code required")
 
-		return errSMSRequired
+		return ErrSMSRequired
 	}
 
 	if strings.Contains(buf.String(), "<NextService>auth/token</NextService>") || strings.Contains(buf.String(), "<NextAuth>7</NextAuth>") {
@@ -268,7 +273,9 @@ func (c *EasyConnectClient) loginTOTP() error {
 		_, err = fmt.Scan(&totpCode)
 	} else {
 		totpCode, err = totp.GenerateCode(c.totpSecret, time.Now())
-		fmt.Println("Generate TOTP code:", totpCode)
+		if err == nil {
+			log.Println("Generate TOTP code:", totpCode)
+		}
 	}
 	if err != nil {
 		return err
@@ -486,6 +493,7 @@ func (c *EasyConnectClient) requestIP() error {
 
 	n, err := conn.Write(message)
 	if err != nil {
+		_ = conn.Close()
 		return err
 	}
 
@@ -495,6 +503,7 @@ func (c *EasyConnectClient) requestIP() error {
 	reply := make([]byte, 0x80)
 	n, err = conn.Read(reply)
 	if err != nil {
+		_ = conn.Close()
 		return err
 	}
 
@@ -502,6 +511,7 @@ func (c *EasyConnectClient) requestIP() error {
 	log.DebugDumpHex(reply[:n])
 
 	if reply[0] != 0x00 {
+		_ = conn.Close()
 		return errors.New("unexpected request IP reply")
 	}
 
@@ -510,13 +520,24 @@ func (c *EasyConnectClient) requestIP() error {
 
 	log.Printf("Client IP: %s", c.ip.String())
 
+	// Close old connection and goroutine
+	c.CloseIPConn()
+
+	c.ipConn = conn
+	ctx, cancel := context.WithCancel(context.Background())
+	c.ipConnCancel = cancel
+
 	// Request IP conn CAN NOT be closed, otherwise tx/rx handshake will fail
-	go func() {
+	go func(ctx context.Context, conn io.Closer) {
 		for {
-			time.Sleep(time.Second * 10)
-			runtime.KeepAlive(conn)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second * 10):
+				runtime.KeepAlive(conn)
+			}
 		}
-	}()
+	}(ctx, conn)
 
 	// Auto-save session if sessionFile is configured
 	if c.sessionFile != "" {
@@ -525,6 +546,44 @@ func (c *EasyConnectClient) requestIP() error {
 		}
 	}
 
+	return nil
+}
+
+// CloseIPConn closes the IP holding connection and stops its maintenance goroutine
+func (c *EasyConnectClient) CloseIPConn() {
+	if c.ipConnCancel != nil {
+		c.ipConnCancel()
+		c.ipConnCancel = nil
+	}
+	if c.ipConn != nil {
+		_ = c.ipConn.Close()
+		c.ipConn = nil
+	}
+}
+
+// KeepWebSessionAlive sends a dummy request to refresh the web session timeout
+func (c *EasyConnectClient) KeepWebSessionAlive() error {
+	addr := "https://" + c.server + "/por/conf.csp"
+	req, err := http.NewRequest("GET", addr, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_windows")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("KeepWebSessionAlive failed with status: %d", resp.StatusCode)
+	}
+
+	log.Printf("KeepWebSessionAlive: OK")
 	return nil
 }
 
@@ -539,7 +598,16 @@ func (c *EasyConnectClient) RefreshToken() error {
 func (c *EasyConnectClient) RefreshSession() error {
 	err := c.requestToken()
 	if err != nil {
-		return err
+		log.Printf("Token refresh failed: %v. Attempting automatic re-setup...", err)
+		// Try auto setup
+		if setupErr := c.SetupAuto(); setupErr != nil {
+			if errors.Is(setupErr, ErrSMSRequired) {
+				log.Printf("CRITICAL: SMS verification required. Please restart the program and enter SMS code.")
+				os.Exit(1)
+			}
+			return fmt.Errorf("auto setup failed: %w (original: %v)", setupErr, err)
+		}
+		return nil // SetupAuto already calls requestIP and saves session
 	}
 
 	err = c.requestIP()
