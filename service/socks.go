@@ -27,7 +27,7 @@ func ServeSocks5(bindAddr string, dialer *dial.Dialer, resolver *resolve.Resolve
 		socks5.WithLogger(socks5.NewLogger(log.NewLogger("[SOCKS5] "))),
 	)
 
-	log.Printf("SOCKS5 server listening on " + bindAddr)
+	log.Printf("%s", "SOCKS5 server listening on " + bindAddr)
 
 	if err := server.ListenAndServe("tcp", bindAddr); err != nil {
 		panic("SOCKS5 listen failed: " + err.Error())

@@ -97,7 +97,7 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 		}
 	})
 
-	log.Printf("HTTP server listening on " + bindAddr)
+	log.Printf("%s", "HTTP server listening on " + bindAddr)
 
 	if err := http.ListenAndServe(bindAddr, handlerFunc); err != nil {
 		panic("HTTP listen failed: " + err.Error())

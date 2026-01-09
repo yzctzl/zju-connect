@@ -81,15 +81,16 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 		if rc.SelectAttr("type").Value == "1" || rc.SelectAttr("type").Value == "2" {
 			var protocol string
 			protoStr := rc.SelectAttr("proto").Value
-			if protoStr == "-1" {
+			switch protoStr {
+			case "-1":
 				protocol = "all"
-			} else if protoStr == "0" {
+			case "0":
 				protocol = "tcp"
-			} else if protoStr == "1" {
+			case "1":
 				protocol = "udp"
-			} else if protoStr == "2" {
+			case "2":
 				protocol = "icmp"
-			} else {
+			default:
 				log.DebugPrintf("Unknown protocol: %s", protoStr)
 			}
 

@@ -193,7 +193,7 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 
 func (c *EasyConnectClient) loginSMS() error {
 	addr := "https://" + c.server + "/por/login_sms.csp?apiversion=1"
-	log.Printf("SMS request: " + addr)
+	log.Printf("%s", "SMS request: " + addr)
 	req, err := http.NewRequest("POST", addr, nil)
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
@@ -227,7 +227,7 @@ func (c *EasyConnectClient) loginSMS() error {
 	}
 
 	addr = "https://" + c.server + "/por/login_sms1.csp?apiversion=1"
-	log.Printf("SMS Request: " + addr)
+	log.Printf("%s", "SMS Request: " + addr)
 	form := url.Values{
 		"svpn_inputsms": {smsCode},
 	}
