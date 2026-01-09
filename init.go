@@ -4,11 +4,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/BurntSushi/toml"
-	"github.com/mythologyli/zju-connect/configs"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/BurntSushi/toml"
+	"github.com/mythologyli/zju-connect/configs"
 )
 
 func getTOMLVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
@@ -55,6 +56,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.SecondaryDNSServer = getTOMLVal(confTOML.SecondaryDNSServer, "114.114.114.114")
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
+	conf.SessionFile = getTOMLVal(confTOML.SessionFile, "")
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -142,6 +144,7 @@ func init() {
 	flag.StringVar(&customDns, "custom-dns", "", "Custom set dns lookup (e.g. www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198)")
 	flag.StringVar(&customProxyDomain, "custom-proxy-domain", "", "Custom set domains which force use RVPN proxy  (e.g. science.org, nature.com)")
 	flag.StringVar(&configFile, "config", "", "Config file")
+	flag.StringVar(&conf.SessionFile, "session-file", "", "Session file path for persistent session storage")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 
 	flag.Parse()

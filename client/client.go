@@ -3,11 +3,12 @@ package client
 import (
 	"crypto/tls"
 	"errors"
-	"github.com/mythologyli/zju-connect/log"
-	"inet.af/netaddr"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/mythologyli/zju-connect/log"
+	"inet.af/netaddr"
 )
 
 type IPResource struct {
@@ -49,6 +50,13 @@ type EasyConnectClient struct {
 
 	ip        net.IP // Client IP
 	ipReverse []byte
+
+	sessionFile string // Path to session file for persistence
+}
+
+// SetSessionFile sets the path for session persistence
+func (c *EasyConnectClient) SetSessionFile(path string) {
+	c.sessionFile = path
 }
 
 func NewEasyConnectClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool) *EasyConnectClient {

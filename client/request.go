@@ -193,7 +193,7 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 
 func (c *EasyConnectClient) loginSMS() error {
 	addr := "https://" + c.server + "/por/login_sms.csp?apiversion=1"
-	log.Printf("%s", "SMS request: " + addr)
+	log.Printf("%s", "SMS request: "+addr)
 	req, err := http.NewRequest("POST", addr, nil)
 	req.Header.Set("Cookie", "TWFID="+c.twfID)
 	req.Header.Set("User-Agent", "EasyConnect_windows")
@@ -227,7 +227,7 @@ func (c *EasyConnectClient) loginSMS() error {
 	}
 
 	addr = "https://" + c.server + "/por/login_sms1.csp?apiversion=1"
-	log.Printf("%s", "SMS Request: " + addr)
+	log.Printf("%s", "SMS Request: "+addr)
 	form := url.Values{
 		"svpn_inputsms": {smsCode},
 	}
@@ -517,6 +517,42 @@ func (c *EasyConnectClient) requestIP() error {
 			runtime.KeepAlive(conn)
 		}
 	}()
+
+	// Auto-save session if sessionFile is configured
+	if c.sessionFile != "" {
+		if err := c.SaveSession(c.sessionFile); err != nil {
+			log.Printf("Warning: failed to save session: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// RefreshToken attempts to refresh the token using the current twfID
+// Returns nil on success, error otherwise
+func (c *EasyConnectClient) RefreshToken() error {
+	return c.requestToken()
+}
+
+// RefreshSession attempts to refresh both token and IP
+// This can be used to recover from token expiration
+func (c *EasyConnectClient) RefreshSession() error {
+	err := c.requestToken()
+	if err != nil {
+		return err
+	}
+
+	err = c.requestIP()
+	if err != nil {
+		return err
+	}
+
+	// Save the refreshed session
+	if c.sessionFile != "" {
+		if saveErr := c.SaveSession(c.sessionFile); saveErr != nil {
+			log.Printf("Warning: failed to save refreshed session: %v", saveErr)
+		}
+	}
 
 	return nil
 }

@@ -1,9 +1,12 @@
 package client
 
 import (
-	"github.com/mythologyli/zju-connect/log"
 	"io"
+	"strings"
 	"sync"
+	"time"
+
+	"github.com/mythologyli/zju-connect/log"
 )
 
 type RvpnConn struct {
@@ -22,43 +25,118 @@ type RvpnConn struct {
 func (r *RvpnConn) Read(p []byte) (n int, err error) {
 	r.recvLock.Lock()
 	defer r.recvLock.Unlock()
-	for n, err = r.recvConn.Read(p); err != nil && r.recvErrCount < 5; {
 
-		log.Printf("Error occurred while receiving, retrying: %v", err)
+	backoff := time.Second
+	maxBackoff := 5 * time.Minute
 
-		// Do handshake again and create a new recvConn
-		_ = r.recvConn.Close()
-		r.recvConn, err = r.easyConnectClient.RecvConn()
-		if err != nil {
-			return 0, err
+	for {
+		n, err = r.recvConn.Read(p)
+		if err == nil {
+			r.recvErrCount = 0
+			return n, nil
 		}
+
 		r.recvErrCount++
-		if r.recvErrCount >= 5 {
-			return 0, err
+		log.Printf("Error occurred while receiving (attempt %d): %v", r.recvErrCount, err)
+
+		// Close the old connection
+		_ = r.recvConn.Close()
+
+		// Reconnect loop with exponential backoff
+		for {
+			// Wait before retry (except first attempt)
+			if backoff > time.Second {
+				log.Printf("Waiting %v before reconnect...", backoff)
+				time.Sleep(backoff)
+			}
+
+			r.recvConn, err = r.easyConnectClient.RecvConn()
+			if err == nil {
+				log.Printf("RecvConn reconnected successfully")
+				backoff = time.Second // Reset backoff on success
+				break
+			}
+
+			log.Printf("RecvConn failed: %v. Retrying...", err)
+
+			// If handshake error, try refresh token
+			if strings.Contains(err.Error(), "handshake reply") {
+				log.Printf("Possible token expiry. Attempting to refresh session...")
+				if rtokErr := r.easyConnectClient.RefreshSession(); rtokErr != nil {
+					log.Printf("Session refresh failed: %v", rtokErr)
+				} else {
+					log.Printf("Session refreshed successfully")
+				}
+			}
+
+			// Increase backoff for next attempt
+			backoff = backoff * 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
+
+		// Reconnected, continue to next Read attempt
 	}
-	return
 }
 
 // try best to write, if return err!=nil, please panic
 func (r *RvpnConn) Write(p []byte) (n int, err error) {
 	r.sendLock.Lock()
 	defer r.sendLock.Unlock()
-	for n, err = r.sendConn.Write(p); err != nil && r.sendErrCount < 5; {
-		log.Printf("Error occurred while sending, retrying: %v", err)
 
-		// Do handshake again and create a new sendConn
-		_ = r.sendConn.Close()
-		r.sendConn, err = r.easyConnectClient.SendConn()
-		if err != nil {
-			return 0, err
+	backoff := time.Second
+	maxBackoff := 5 * time.Minute
+
+	for {
+		n, err = r.sendConn.Write(p)
+		if err == nil {
+			r.sendErrCount = 0
+			return n, nil
 		}
+
 		r.sendErrCount++
-		if r.sendErrCount >= 5 {
-			return 0, err
+		log.Printf("Error occurred while sending (attempt %d): %v", r.sendErrCount, err)
+
+		// Close the old connection
+		_ = r.sendConn.Close()
+
+		// Reconnect loop with exponential backoff
+		for {
+			// Wait before retry (except first attempt)
+			if backoff > time.Second {
+				log.Printf("Waiting %v before reconnect...", backoff)
+				time.Sleep(backoff)
+			}
+
+			r.sendConn, err = r.easyConnectClient.SendConn()
+			if err == nil {
+				log.Printf("SendConn reconnected successfully")
+				backoff = time.Second // Reset backoff on success
+				break
+			}
+
+			log.Printf("SendConn failed: %v. Retrying...", err)
+
+			// If handshake error, try refresh session
+			if strings.Contains(err.Error(), "handshake reply") {
+				log.Printf("Possible token expiry. Attempting to refresh session...")
+				if rtokErr := r.easyConnectClient.RefreshSession(); rtokErr != nil {
+					log.Printf("Session refresh failed: %v", rtokErr)
+				} else {
+					log.Printf("Session refreshed successfully")
+				}
+			}
+
+			// Increase backoff for next attempt
+			backoff = backoff * 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
+
+		// Reconnected, continue to next Write attempt
 	}
-	return
 }
 
 func (r *RvpnConn) Close() error {

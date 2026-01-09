@@ -7,6 +7,11 @@ import (
 	"crypto"
 	"crypto/tls"
 	"fmt"
+	"net"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/dial"
@@ -17,10 +22,6 @@ import (
 	"github.com/mythologyli/zju-connect/stack/tun"
 	"golang.org/x/crypto/pkcs12"
 	"inet.af/netaddr"
-	"net"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 var conf configs.Config
@@ -72,9 +73,26 @@ func main() {
 		!conf.DisableServerConfig,
 		!conf.SkipDomainResource,
 	)
-	err := vpnClient.Setup()
-	if err != nil {
-		log.Fatalf("EasyConnect client setup error: %s", err)
+
+	// Set session file path if configured
+	if conf.SessionFile != "" {
+		vpnClient.SetSessionFile(conf.SessionFile)
+		// Try to restore session from file first
+		if vpnClient.TryRestoreSession(conf.SessionFile) {
+			log.Printf("Session restored from %s", conf.SessionFile)
+		} else {
+			// Session restore failed, do full setup
+			err := vpnClient.Setup()
+			if err != nil {
+				log.Fatalf("EasyConnect client setup error: %s", err)
+			}
+		}
+	} else {
+		// No session file configured, do normal setup
+		err := vpnClient.Setup()
+		if err != nil {
+			log.Fatalf("EasyConnect client setup error: %s", err)
+		}
 	}
 
 	log.Printf("EasyConnect client started")

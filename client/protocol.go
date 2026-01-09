@@ -3,10 +3,12 @@ package client
 import (
 	"crypto/rand"
 	"errors"
-	"github.com/mythologyli/zju-connect/log"
-	"github.com/refraction-networking/utls"
 	"io"
 	"net"
+	"time"
+
+	"github.com/mythologyli/zju-connect/log"
+	tls "github.com/refraction-networking/utls"
 )
 
 type fakeHeartBeatExtension struct {
@@ -31,7 +33,11 @@ func (e *fakeHeartBeatExtension) Read(b []byte) (n int, err error) {
 // Create a special TLS connection to the VPN server
 func (c *EasyConnectClient) tlsConn() (*tls.UConn, error) {
 	// Dial the VPN server
-	dialConn, err := net.Dial("tcp", c.server)
+	dialer := net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	dialConn, err := dialer.Dial("tcp", c.server)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +94,7 @@ func (c *EasyConnectClient) RecvConn() (*tls.UConn, error) {
 	log.DebugPrintf("Recv handshake: read %d bytes", n)
 	log.DebugDumpHex(reply[:n])
 
-	if reply[0] != 0x01 {
+	if n < 1 || reply[0] != 0x01 {
 		return nil, errors.New("unexpected recv handshake reply")
 	}
 
@@ -127,7 +133,7 @@ func (c *EasyConnectClient) SendConn() (*tls.UConn, error) {
 	log.DebugPrintf("Send handshake: read %d bytes", n)
 	log.DebugDumpHex(reply[:n])
 
-	if reply[0] != 0x02 {
+	if n < 1 || reply[0] != 0x02 {
 		return nil, errors.New("unexpected send handshake reply")
 	}
 

@@ -2,6 +2,9 @@ package gvisor
 
 import (
 	"errors"
+	"io"
+	"time"
+
 	"github.com/mythologyli/zju-connect/client"
 	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"github.com/mythologyli/zju-connect/internal/zcdns"
@@ -13,7 +16,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
-	"io"
 )
 
 type Stack struct {
@@ -93,9 +95,11 @@ func (ep *Endpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error)
 			if err != nil {
 				if hook_func.IsTerminal() {
 					return list.Len(), nil
-				} else {
-					panic(err)
 				}
+				// RvpnConn.Write handles reconnection internally
+				// Log error and continue instead of panic
+				log.Printf("Error writing packet to VPN: %v", err)
+				continue
 			}
 			log.DebugPrintf("Send: wrote %d bytes", n)
 			log.DebugDumpHex(buf[:n])
@@ -156,11 +160,24 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 }
 
 func (s *Stack) Run() {
-	var connErr error
-	s.endpoint.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
-	if connErr != nil {
-		panic(connErr)
+	// Create RvpnConn with retry loop
+	backoff := time.Second
+	maxBackoff := 5 * time.Minute
+	for {
+		var connErr error
+		s.endpoint.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+		if connErr == nil {
+			break
+		}
+		log.Printf("Failed to create RvpnConn: %v. Retrying in %v...", connErr, backoff)
+		time.Sleep(backoff)
+		backoff = backoff * 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
 	}
+	log.Printf("RvpnConn created successfully")
+
 	// Read from VPN server and send to gVisor stack
 	for {
 		buf := make([]byte, MTU)
@@ -168,9 +185,12 @@ func (s *Stack) Run() {
 		if err != nil {
 			if hook_func.IsTerminal() {
 				return
-			} else {
-				panic(err)
 			}
+			// RvpnConn.Read handles reconnection internally
+			// This should rarely happen, but log it if it does
+			log.Printf("Unexpected error from RvpnConn.Read: %v", err)
+			time.Sleep(time.Second)
+			continue
 		}
 		log.DebugPrintf("Recv: read %d bytes", n)
 		log.DebugDumpHex(buf[:n])

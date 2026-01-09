@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/mythologyli/zju-connect/internal/hook_func"
 	"io"
+	"time"
+
+	"github.com/mythologyli/zju-connect/internal/hook_func"
 
 	tun "github.com/cxz66666/sing-tun"
 	"github.com/miekg/dns"
@@ -31,18 +33,35 @@ func (s *Stack) SetupResolve(r zcdns.LocalServer) {
 }
 
 func (s *Stack) Run() {
-	var connErr error
-	s.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
-	if connErr != nil {
-		panic(connErr)
+	// Create RvpnConn with retry loop
+	backoff := time.Second
+	maxBackoff := 5 * time.Minute
+	for {
+		var connErr error
+		s.rvpnConn, connErr = client.NewRvpnConn(s.endpoint.easyConnectClient)
+		if connErr == nil {
+			break
+		}
+		log.Printf("Failed to create RvpnConn: %v. Retrying in %v...", connErr, backoff)
+		time.Sleep(backoff)
+		backoff = backoff * 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
 	}
+	log.Printf("RvpnConn created successfully")
+
 	// Read from VPN server and send to TUN stack
 	go func() {
 		for {
 			buf := make([]byte, MTU+tun.PacketOffset)
 			n, err := s.rvpnConn.Read(buf)
 			if err != nil {
-				panic(err)
+				// RvpnConn.Read now handles reconnection internally
+				// This should rarely happen, but log it if it does
+				log.Printf("Unexpected error from RvpnConn.Read: %v", err)
+				time.Sleep(time.Second)
+				continue
 			}
 			log.DebugPrintf("Recv: read %d bytes", n)
 			log.DebugDumpHex(buf[:n])
@@ -51,10 +70,9 @@ func (s *Stack) Run() {
 			if err != nil {
 				if hook_func.IsTerminal() {
 					return
-				} else {
-					log.Printf("Error occurred while writing to TUN stack: %v", err)
-					panic(err)
 				}
+				log.Printf("Error occurred while writing to TUN stack: %v", err)
+				// Continue instead of panic - TUN errors are usually transient
 			}
 		}
 	}()
@@ -66,10 +84,10 @@ func (s *Stack) Run() {
 		if err != nil {
 			if hook_func.IsTerminal() {
 				return
-			} else {
-				log.Printf("Error occurred while reading from TUN stack: %v", err)
-				panic(err)
 			}
+			log.Printf("Error occurred while reading from TUN stack: %v", err)
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
 
 		if n < zctcpip.IPv4PacketMinLength {
@@ -151,12 +169,15 @@ func (s *Stack) processIPV4TCP(packet zctcpip.IPv4Packet, tcpPacket zctcpip.TCPP
 	}
 	n, err := s.rvpnConn.Write(packet)
 	if err != nil {
-		panic(err)
+		// RvpnConn.Write now handles reconnection internally
+		// Log and return error instead of panic
+		log.Printf("Error writing TCP packet: %v", err)
+		return err
 	}
 	log.DebugPrintf("Send: wrote %d bytes", n)
 	log.DebugDumpHex(packet[:n])
 
-	return err
+	return nil
 }
 
 func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPPacket) error {
@@ -168,12 +189,14 @@ func (s *Stack) processIPV4UDP(packet zctcpip.IPv4Packet, udpPacket zctcpip.UDPP
 
 	n, err := s.rvpnConn.Write(packet)
 	if err != nil {
-		panic(err)
+		// RvpnConn.Write now handles reconnection internally
+		log.Printf("Error writing UDP packet: %v", err)
+		return err
 	}
 	log.DebugPrintf("Send: wrote %d bytes", n)
 	log.DebugDumpHex(packet[:n])
 
-	return err
+	return nil
 }
 
 func (s *Stack) processIPV4ICMP(packet zctcpip.IPv4Packet, icmpHeader zctcpip.ICMPPacket) error {
@@ -184,12 +207,14 @@ func (s *Stack) processIPV4ICMP(packet zctcpip.IPv4Packet, icmpHeader zctcpip.IC
 
 	n, err := s.rvpnConn.Write(packet)
 	if err != nil {
-		panic(err)
+		// RvpnConn.Write now handles reconnection internally
+		log.Printf("Error writing ICMP packet: %v", err)
+		return err
 	}
 	log.DebugPrintf("Send: wrote %d bytes", n)
 	log.DebugDumpHex(packet[:n])
 
-	return err
+	return nil
 }
 
 // only can handle udp dns query!
