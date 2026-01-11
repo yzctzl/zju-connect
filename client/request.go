@@ -583,7 +583,7 @@ func (c *EasyConnectClient) KeepWebSessionAlive() error {
 		return fmt.Errorf("KeepWebSessionAlive failed with status: %d", resp.StatusCode)
 	}
 
-	log.Printf("KeepWebSessionAlive: OK")
+	log.DebugPrintf("KeepWebSessionAlive: OK")
 	return nil
 }
 

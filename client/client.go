@@ -48,7 +48,7 @@ type EasyConnectClient struct {
 	domainResources map[string]DomainResource
 	ipSet           *netaddr.IPSet
 	dnsResource     map[string]net.IP
-	dnsServer       string
+	dnsServers      []string
 
 	ip        net.IP // Client IP
 	ipReverse []byte
@@ -122,12 +122,12 @@ func (c *EasyConnectClient) DNSResource() (map[string]net.IP, error) {
 	return c.dnsResource, nil
 }
 
-func (c *EasyConnectClient) DNSServer() (string, error) {
-	if c.dnsServer == "" {
-		return "", errors.New("DNS server not available")
+func (c *EasyConnectClient) DNSServers() ([]string, error) {
+	if len(c.dnsServers) == 0 {
+		return nil, errors.New("DNS server not available")
 	}
 
-	return c.dnsServer, nil
+	return c.dnsServers, nil
 }
 
 func (c *EasyConnectClient) Setup() error {

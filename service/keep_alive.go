@@ -10,7 +10,7 @@ import (
 	"github.com/mythologyli/zju-connect/resolve"
 )
 
-func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver) {
+func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver, keepAliveDomain string) {
 	var remoteUDPResolver *net.Resolver
 	var err error
 
@@ -34,7 +34,7 @@ func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver) 
 	lastWebKeepAlive := time.Now()
 
 	for {
-		_, err := remoteUDPResolver.LookupIP(context.Background(), "ip4", "www.henu.edu.cn")
+		_, err := remoteUDPResolver.LookupIP(context.Background(), "ip4", keepAliveDomain)
 		if err != nil {
 			consecutiveFailures++
 			log.Printf("KeepAlive: %s (consecutive failures: %d)", err, consecutiveFailures)
@@ -54,7 +54,7 @@ func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver) 
 				log.Printf("KeepAlive: recovered after %d failures", consecutiveFailures)
 			}
 			consecutiveFailures = 0
-			log.Printf("KeepAlive: OK")
+			log.DebugPrintf("KeepAlive: OK")
 		}
 
 		// Refresh web session every 30 minutes

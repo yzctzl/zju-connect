@@ -57,6 +57,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSServerBind = getTOMLVal(confTOML.DNSServerBind, "")
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.SessionFile = getTOMLVal(confTOML.SessionFile, "")
+	conf.KeepAliveDomain = getTOMLVal(confTOML.KeepAliveDomain, "www.baidu.com")
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -145,6 +146,7 @@ func init() {
 	flag.StringVar(&customProxyDomain, "custom-proxy-domain", "", "Custom set domains which force use RVPN proxy  (e.g. science.org, nature.com)")
 	flag.StringVar(&configFile, "config", "", "Config file")
 	flag.StringVar(&conf.SessionFile, "session-file", "", "Session file path for persistent session storage")
+	flag.StringVar(&conf.KeepAliveDomain, "keep-alive-domain", "www.baidu.com", "Domain used for keep alive check")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 
 	flag.Parse()

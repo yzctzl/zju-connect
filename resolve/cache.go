@@ -1,22 +1,37 @@
 package resolve
 
 import (
-	"github.com/patrickmn/go-cache"
 	"net"
+
+	"github.com/mythologyli/zju-connect/client"
+	"github.com/patrickmn/go-cache"
 )
 
-func (r *Resolver) getDNSCache(host string) (net.IP, bool) {
-	if item, found := r.dnsCache.Get(host); found {
-		return item.(net.IP), found
-	} else {
-		return nil, found
-	}
+// CachedDNSEntry stores both IP and optional DomainResource for proper context restoration
+type CachedDNSEntry struct {
+	IP             net.IP
+	DomainResource *client.DomainResource // nil if not a VPN domain
 }
 
-func (r *Resolver) setDNSCache(host string, ip net.IP) {
-	r.dnsCache.Set(host, ip, cache.DefaultExpiration)
+func (r *Resolver) getDNSCache(host string) (*CachedDNSEntry, bool) {
+	if item, found := r.dnsCache.Get(host); found {
+		return item.(*CachedDNSEntry), true
+	}
+	return nil, false
+}
+
+func (r *Resolver) setDNSCache(host string, ip net.IP, domainResource *client.DomainResource) {
+	entry := &CachedDNSEntry{
+		IP:             ip,
+		DomainResource: domainResource,
+	}
+	r.dnsCache.Set(host, entry, cache.DefaultExpiration)
 }
 
 func (r *Resolver) SetPermanentDNS(host string, ip net.IP) {
-	r.dnsCache.Set(host, ip, cache.NoExpiration)
+	entry := &CachedDNSEntry{
+		IP:             ip,
+		DomainResource: nil,
+	}
+	r.dnsCache.Set(host, entry, cache.NoExpiration)
 }

@@ -2,12 +2,13 @@ package client
 
 import (
 	"errors"
-	"github.com/beevik/etree"
-	"github.com/mythologyli/zju-connect/log"
-	"inet.af/netaddr"
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/beevik/etree"
+	"github.com/mythologyli/zju-connect/log"
+	"inet.af/netaddr"
 )
 
 func (c *EasyConnectClient) parseLineListFromConfig(config string) error {
@@ -241,10 +242,16 @@ func (c *EasyConnectClient) parseResources(resources string) error {
 		return errors.New("no Dns dnsserver attribute found")
 	}
 
-	c.dnsServer = strings.Split(dnsServerStr.Value, ";")[0]
+	c.dnsServers = strings.Split(dnsServerStr.Value, ";")
+	var validDnsServers []string
+	for _, ds := range c.dnsServers {
+		if ds != "" && ds != "0.0.0.0" {
+			validDnsServers = append(validDnsServers, ds)
+		}
+	}
+	c.dnsServers = validDnsServers
 
-	if c.dnsServer == "0.0.0.0" {
-		c.dnsServer = ""
+	if len(c.dnsServers) == 0 {
 		return errors.New("DNS server invalid")
 	}
 

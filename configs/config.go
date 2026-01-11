@@ -35,6 +35,7 @@ type (
 		CustomProxyDomain   []string
 		TwfID               string
 		SessionFile         string
+		KeepAliveDomain     string
 	}
 
 	SinglePortForwarding struct {
@@ -83,6 +84,7 @@ type (
 		CustomDNS           []SingleCustomDNSTOML      `toml:"custom_dns"`
 		CustomProxyDomain   []string                   `toml:"custom_proxy_domain"`
 		SessionFile         *string                    `toml:"session_file"`
+		KeepAliveDomain     *string                    `toml:"keep_alive_domain"`
 	}
 
 	SinglePortForwardingTOML struct {
