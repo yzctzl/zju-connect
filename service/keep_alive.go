@@ -32,6 +32,7 @@ func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver, 
 
 	consecutiveFailures := 0
 	lastWebKeepAlive := time.Now()
+	lastFullRefresh := time.Now()
 
 	for {
 		_, err := remoteUDPResolver.LookupIP(context.Background(), "ip4", keepAliveDomain)
@@ -63,6 +64,17 @@ func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver, 
 				log.Printf("KeepWebSession: Failed: %v", kwErr)
 			} else {
 				lastWebKeepAlive = time.Now()
+			}
+		}
+
+		// Proactively refresh full session every 12 hours to prevent 24h expiration
+		if time.Since(lastFullRefresh) >= 12*time.Hour {
+			log.Printf("KeepAlive: Proactive session refresh triggered (12h interval)")
+			if rfErr := vpnClient.RefreshSession(); rfErr != nil {
+				log.Printf("KeepAlive: Proactive session refresh failed: %v. Will retry in next loop.", rfErr)
+			} else {
+				log.Printf("KeepAlive: Proactive session refresh successful")
+				lastFullRefresh = time.Now()
 			}
 		}
 

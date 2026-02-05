@@ -119,12 +119,36 @@ func (c *EasyConnectClient) TryRestoreSession(path string) bool {
 	}
 
 	// Try to verify the session is still valid by requesting IP
-	// This also ensures the connection to server is working
 	log.Printf("Validating restored session...")
+	log.Printf("  TWFID: %s", c.twfID)
+	log.Printf("  Token: %x", c.token[:])
+	log.Printf("  IP: %s", c.ip.String())
+
 	err = c.requestIP()
 	if err != nil {
 		log.Printf("Session validation failed: %v", err)
-		// Clear the loaded session data
+		log.Printf("Attempting to refresh token using existing TWFID...")
+
+		// The TLS session ID might have expired, but the TWFID might still be valid.
+		// Try to get a new token using the existing TWFID.
+		if refreshErr := c.RefreshToken(); refreshErr == nil {
+			log.Printf("Token refreshed successfully. New token: %x", c.token[:])
+			log.Printf("Re-validating session with new token...")
+
+			err = c.requestIP()
+			if err != nil {
+				log.Printf("Session re-validation failed after token refresh: %v", err)
+				log.Printf("The server rejected the new token.")
+			}
+		} else {
+			log.Printf("Token refresh failed: %v", refreshErr)
+			log.Printf("This likely means the TWFID has expired and full re-authentication is required.")
+		}
+	}
+
+	// If we still have an error after recovery attempts, fail
+	if err != nil {
+		log.Printf("Clearing invalid session data and falling back to full authentication...")
 		c.twfID = ""
 		c.token = nil
 		c.ip = nil
@@ -133,5 +157,21 @@ func (c *EasyConnectClient) TryRestoreSession(path string) bool {
 	}
 
 	log.Printf("Session restored successfully, client IP: %s", c.ip.String())
+
+	// Fetch resources if enabled
+	if c.parseResource {
+		log.Print("Fetching resources for restored session...")
+		resources, err := c.requestResources()
+		if err != nil {
+			log.Printf("Failed to fetch resources: %v", err)
+			return false
+		}
+		err = c.parseResources(resources)
+		if err != nil {
+			log.Printf("Failed to parse resources: %v", err)
+			return false
+		}
+	}
+
 	return true
 }

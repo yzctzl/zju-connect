@@ -2,7 +2,6 @@ package client
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -85,19 +84,21 @@ func (r *RvpnConn) Read(p []byte) (n int, err error) {
 			}
 			log.Printf("Diagnostic [Attempt %d]: %s", innerRetryCount, diagnose)
 
-			// Only trigger RefreshSession after 6 failed attempts (cumulative or inner)
-			// We strictly follow the 6-retry rule even if we suspect session expiry (EOF/Handshake).
-			if r.recvErrCount > 7 || innerRetryCount > 7 {
-				reason := "exceeded 7 retries for general connection failures"
+			// Trigger RefreshSession:
+			// 1. Instantly if we are almost certain the session has expired (EOF/Handshake).
+			// 2. After 6 failed attempts for general connection failures (likely transient network issues).
+			if isLikelySessionExpiry || r.recvErrCount >= 6 || innerRetryCount >= 6 {
+				reason := "exceeded 6 retries for general connection failures"
 				if isLikelySessionExpiry {
-					reason = "exceeded 7 retries with high-confidence session expiry indicators (EOF/Handshake)"
+					reason = "detected high-confidence session expiry (EOF/Handshake)"
 				}
 				log.Printf("Session refresh triggered (%s). Final error: %v (total: %d, inner: %d). Refreshing session...", reason, err, r.recvErrCount, innerRetryCount)
 
 				if rtokErr := r.easyConnectClient.RefreshSession(); rtokErr != nil {
-					log.Printf("Session refresh failed: %v", rtokErr)
-					// Return fatal error to caller - session cannot be recovered
-					return 0, fmt.Errorf("session refresh failed: %w", rtokErr)
+					log.Printf("Session refresh failed: %v. Continuing retries as it might be a transient network issue during refresh.", rtokErr)
+					// We do NOT return error here. Instead, we let the inner loop continue retrying.
+					// This ensures that if the refresh failed due to a total network outage,
+					// we'll keep trying until the network is back.
 				} else {
 					log.Printf("Session refreshed successfully. Resetting counters and retrying connection.")
 					r.recvErrCount = 0 // Reset attempt counters on successful refresh
@@ -181,18 +182,19 @@ func (r *RvpnConn) Write(p []byte) (n int, err error) {
 			}
 			log.Printf("Diagnostic [Attempt %d]: %s", innerRetryCount, diagnose)
 
-			// Only trigger RefreshSession after 6 failed attempts (cumulative or inner)
-			if r.sendErrCount > 7 || innerRetryCount > 7 {
-				reason := "exceeded 7 retries for general connection failures"
+			// Trigger RefreshSession:
+			// 1. Instantly if we are almost certain the session has expired (EOF/Handshake).
+			// 2. After 6 failed attempts for general connection failures (likely transient network issues).
+			if isLikelySessionExpiry || r.sendErrCount >= 6 || innerRetryCount >= 6 {
+				reason := "exceeded 6 retries for general connection failures"
 				if isLikelySessionExpiry {
-					reason = "exceeded 7 retries with high-confidence session expiry indicators (EOF/Handshake)"
+					reason = "detected high-confidence session expiry (EOF/Handshake)"
 				}
 				log.Printf("Session refresh triggered (%s). Final error: %v (total: %d, inner: %d). Refreshing session...", reason, err, r.sendErrCount, innerRetryCount)
 
 				if rtokErr := r.easyConnectClient.RefreshSession(); rtokErr != nil {
-					log.Printf("Session refresh failed: %v", rtokErr)
-					// Return fatal error to caller - session cannot be recovered
-					return 0, fmt.Errorf("session refresh failed: %w", rtokErr)
+					log.Printf("Session refresh failed: %v. Continuing retries as it might be a transient network issue during refresh.", rtokErr)
+					// We do NOT return error here. Instead, we let the inner loop continue retrying.
 				} else {
 					log.Printf("Session refreshed successfully. Resetting counters and retrying connection.")
 					r.sendErrCount = 0 // Reset attempt counters on successful refresh

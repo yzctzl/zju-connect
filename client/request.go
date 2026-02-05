@@ -441,10 +441,16 @@ func (c *EasyConnectClient) requestResources() (string, error) {
 }
 
 func (c *EasyConnectClient) requestToken() error {
+	log.Printf("Requesting token with TWFID: %s", c.twfID)
+
 	dialConn, err := net.Dial("tcp", c.server)
+	if err != nil {
+		return fmt.Errorf("failed to connect to server %s: %w", c.server, err)
+	}
 	defer func(dialConn net.Conn) {
 		_ = dialConn.Close()
 	}(dialConn)
+
 	conn := utls.UClient(dialConn, &utls.Config{InsecureSkipVerify: true}, utls.HelloGolang)
 	defer func(conn *utls.UConn) {
 		_ = conn.Close()
@@ -461,16 +467,27 @@ func (c *EasyConnectClient) requestToken() error {
 			"\r\nCookie: TWFID="+c.twfID+"\r\n\r\n",
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to send ECAgent request: %w", err)
+	}
+
+	if conn.HandshakeState.ServerHello == nil {
+		return errors.New("TLS handshake failed: no ServerHello received (TWFID may be invalid)")
 	}
 
 	sessionID := hex.EncodeToString(conn.HandshakeState.ServerHello.SessionId)
 	log.Printf("Server session ID: %s", sessionID)
 
+	if len(sessionID) < 31 {
+		return fmt.Errorf("invalid session ID length: %d (expected >= 31)", len(sessionID))
+	}
+
 	buf := make([]byte, 8)
 	n, err := conn.Read(buf)
-	if n == 0 || err != nil {
-		return errors.New("ECAgent request invalid: error " + err.Error() + "\n" + string(buf[:]))
+	if err != nil {
+		return fmt.Errorf("ECAgent request failed: %w", err)
+	}
+	if n == 0 {
+		return errors.New("ECAgent request invalid: no response from server (TWFID may have expired)")
 	}
 
 	c.token = (*[48]byte)([]byte(sessionID[:31] + "\x00" + c.twfID))
@@ -512,6 +529,18 @@ func (c *EasyConnectClient) requestIP() error {
 
 	if reply[0] != 0x00 {
 		_ = conn.Close()
+		log.Printf("Unexpected request IP reply (first byte: 0x%02x, expected: 0x00)", reply[0])
+		log.Printf("Full reply (%d bytes):", n)
+		log.DumpHex(reply[:n])
+
+		// Provide diagnostic hints based on the reply
+		switch reply[0] {
+		case 0x01:
+			log.Printf("Hint: Reply 0x01 often indicates token expiration or invalid token")
+		case 0xff:
+			log.Printf("Hint: Reply 0xff often indicates authentication failure or session timeout")
+		}
+
 		return errors.New("unexpected request IP reply")
 	}
 

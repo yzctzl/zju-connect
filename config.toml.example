@@ -5,29 +5,31 @@ cert_file = ""
 cert_password = ""
 
 # Advanced settings
-server_address = "rvpn.zju.edu.cn"
+server_address = "vpn.henu.edu.cn"
 server_port = 443
 disable_server_config = false
-skip_domain_resource = false
-disable_zju_config = false
+skip_domain_resource = true
+disable_zju_config = true
 disable_zju_dns = false
-disable_multi_line = false
+disable_multi_line = true
 proxy_all = false
-socks_bind = ":1080"
+socks_bind = ":10807"
 socks_user = ""
 socks_passwd = ""
-http_bind = ":1081"
+http_bind = ":10808"
 shadowsocks_url = "" # "ss://aes-128-gcm:password@:1082"
 dial_direct_proxy = "" # "http://127.0.0.1:7890" or "socks://127.0.0.1:7890"
-tun_mode = false
+tun_mode = true
 add_route = false
 dns_ttl = 3600
 disable_keep_alive = false
-zju_dns_server = "10.10.0.21"
+zju_dns_server = "auto"
 secondary_dns_server = "114.114.114.114"
+keep_alive_domain = "www.henu.edu.cn"
 dns_server_bind = ""
 dns_hijack = false
 debug_dump = false
+session_file = "sessoin.json"
 
 # Port forwarding
 port_forwarding = [
