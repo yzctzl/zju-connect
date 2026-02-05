@@ -25,7 +25,7 @@ RUN --mount=target=. \
 
 # Import the binary from build stage
 # use root container, but still use /home/nonroot to keep backward support
-FROM gcr.io/distroless/static as prd
+FROM gcr.io/distroless/static AS prd
 WORKDIR /home/nonroot
 COPY --from=build /app/zju-connect /home/nonroot
 ENTRYPOINT ["/home/nonroot/zju-connect" ,"-config", "/home/nonroot/config.toml"]

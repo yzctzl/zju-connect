@@ -56,7 +56,7 @@
 
 ### ⚠️ 警告
 
-1. 当使用其他开启了 TUN 模式的代理工具，同时配合 zju-connect 作为下游代理时，请注意务必提供正确的分流规则，参考[此 issue](https://github.com/Mythologyli/zju-connect/issues/57)
+建议使用其他开启了 TUN 模式的代理工具时，同时配合 zju-connect 作为上游代理，因为实测中 zju-connect 可能会因为 direct 分流导致连接中断，本地客户端配置脚本[🔗](Script.js)。
 
 ### ⚠️ TUN 模式注意事项
 
@@ -134,6 +134,10 @@
 
 + `twf-id`: twfID 登录，调试用途，一般不需要加此参数
 
++ `session-file`: 指定会话保存文件路径（JSON 格式）。配置后可实现会话持久化，重启程序无需重新登录/短信验证
+
++ `keep-alive-domain`: 指定用于 Keep-Alive 检测的域名，默认为 `www.henu.edu.cn`
+
 + `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效
 
 ### 计划表
@@ -159,6 +163,8 @@
 - [x] 短信验证
 - [x] TOTP 验证
 - [x] 证书验证
+- [x] 会话持久化与断线自动重连优化
+- [x] 主动会话刷新 (12h)
 
 #### To Do
 

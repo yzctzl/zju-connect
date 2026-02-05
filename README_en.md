@@ -133,6 +133,10 @@
 
 + `twf-id`: twfID login, for debugging purposes, generally no need to add this argument
 
++ `session-file`: Specify the session save file path (JSON format). After configuration, session persistence can be achieved, and there is no need to re-login/SMS verify after restarting the program
+
++ `keep-alive-domain`: Specify the domain name used for Keep-Alive detection, default is `www.henu.edu.cn`
+
 + `config`: Specify the configuration file, the content refers to `config.toml.example`. Other parameters are ignored when the configuration file is enabled
 
 ### Schedule
@@ -158,6 +162,8 @@
 - [x] SMS verification
 - [x] TOTP verification
 - [x] Certificate verification
+- [x] Session persistence and automatic reconnection optimization
+- [x] Proactive session refresh (12h)
 
 #### To Do
 
