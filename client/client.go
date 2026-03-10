@@ -53,10 +53,16 @@ type EasyConnectClient struct {
 	ip        net.IP // Client IP
 	ipReverse []byte
 
-	sessionFile string // Path to session file for persistence
+	authTimestamp time.Time // When the TWFID was initially obtained
+	sessionFile   string    // Path to session file for persistence
 
 	ipConn       io.ReadWriteCloser
 	ipConnCancel context.CancelFunc
+}
+
+// AuthTimestamp returns the time when the current session was authenticated
+func (c *EasyConnectClient) AuthTimestamp() time.Time {
+	return c.authTimestamp
 }
 
 // SetSessionFile sets the path for session persistence
@@ -65,7 +71,7 @@ func (c *EasyConnectClient) SetSessionFile(path string) {
 }
 
 func NewEasyConnectClient(server, username, password, totpSecret string, tlsCert tls.Certificate, twfID string, testMultiLine, parseResource, useDomainResource bool) *EasyConnectClient {
-	return &EasyConnectClient{
+	c := &EasyConnectClient{
 		server:            server,
 		username:          username,
 		password:          password,
@@ -77,9 +83,15 @@ func NewEasyConnectClient(server, username, password, totpSecret string, tlsCert
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}},
+			},
+		},
 		twfID: twfID,
 	}
+	if twfID != "" {
+		// init authTimestamp, overwrite when using session.json
+		c.authTimestamp = time.Now()
+	}
+	return c
 }
 
 func (c *EasyConnectClient) IP() (net.IP, error) {

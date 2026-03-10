@@ -3,10 +3,11 @@ package hook_func
 import (
 	"context"
 	"fmt"
+	"net"
+
 	"github.com/mythologyli/zju-connect/configs"
 	"github.com/mythologyli/zju-connect/log"
 	netstat "github.com/shirou/gopsutil/v4/net"
-	"net"
 )
 
 type InitialFunc func(ctx context.Context, config configs.Config) error
@@ -87,6 +88,9 @@ func checkBindPortLegal(ctx context.Context, config configs.Config) error {
 				// darwin "*" means "0.0.0.0"
 				if checkPort == conn.Laddr.Port && (conn.Laddr.IP == "::" || conn.Laddr.IP == "*" ||
 					conn.Laddr.IP == "0.0.0.0" || conn.Laddr.IP == "127.0.0.1") {
+					if kind == "tcp" && conn.Status != "LISTEN" {
+						continue
+					}
 					return fmt.Errorf("%s端口%s已经被进程%d占用，请更换端口或结束占用该端口的进程", kind, conn.Laddr.String(), conn.Pid)
 				}
 			}

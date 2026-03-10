@@ -32,7 +32,7 @@ func (c *EasyConnectClient) SaveSession(path string) error {
 		TokenHex:     hex.EncodeToString(c.token[:]),
 		IPStr:        c.ip.String(),
 		IPReverseHex: hex.EncodeToString(c.ipReverse),
-		Timestamp:    time.Now(),
+		Timestamp:    c.authTimestamp,
 		Server:       c.server,
 	}
 
@@ -70,8 +70,7 @@ func (c *EasyConnectClient) LoadSession(path string) error {
 
 	// Check if session is too old (e.g., > 24 hours)
 	if time.Since(session.Timestamp) > 24*time.Hour {
-		log.Printf("Session expired (age: %v)", time.Since(session.Timestamp))
-		return errors.New("session expired")
+		log.Printf("Warning: Session might be expired (age: %v), but will attempt to restore it anyway.", time.Since(session.Timestamp))
 	}
 
 	// Decode token
@@ -100,6 +99,7 @@ func (c *EasyConnectClient) LoadSession(path string) error {
 	c.token = (*[48]byte)(tokenBytes)
 	c.ip = ip.To4()
 	c.ipReverse = ipReverse
+	c.authTimestamp = session.Timestamp
 
 	log.Printf("Session loaded from %s (age: %v)", path, time.Since(session.Timestamp))
 	return nil

@@ -33,7 +33,7 @@ var errTOTPRequired = errors.New("TOTP required")
 var errCertRequired = errors.New("cert required")
 
 func (c *EasyConnectClient) requestTwfID(isAuto bool) error {
-	err := c.loginAuthAndPsw()
+	err := c.loginAuthAndPsw(isAuto)
 	if err != nil {
 		if errors.Is(err, ErrSMSRequired) {
 			if isAuto {
@@ -61,7 +61,7 @@ func (c *EasyConnectClient) requestTwfID(isAuto bool) error {
 	return nil
 }
 
-func (c *EasyConnectClient) loginAuthAndPsw() error {
+func (c *EasyConnectClient) loginAuthAndPsw(isAuto bool) error {
 	// First we request the TwfID from server
 	addr := "https://" + c.server + "/por/login_auth.csp?apiversion=1"
 	log.Printf("Request: %s", addr)
@@ -82,7 +82,24 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 		return err
 	}
 
-	log.DebugPrintln("Response:", buf.String())
+	bodyStr := buf.String()
+	log.DebugPrintln("Response:", bodyStr)
+
+	// Pre-emptive SMS protection: Stop if SMS is detected and we are in auto mode
+	// Detection of <Type>2</Type> or <NextAuth>2</NextAuth> or <NextService>auth/sms</NextService>
+	if isAuto && (strings.Contains(bodyStr, "<Type>2</Type>") ||
+		strings.Contains(bodyStr, "<NextAuth>2</NextAuth>") ||
+		strings.Contains(bodyStr, "<NextService>auth/sms</NextService>")) {
+
+		// If the user has a safer alternative (TOTP or Cert), we might still be okay,
+		// but if they ONLY have password+TOTP/nothing, SMS is a high risk.
+		// However, to be absolutely safe as requested: "Once it might need SMS, must stop before sending"
+		// We'll stop here if it looks like SMS is mandatory or a priority.
+		if !strings.Contains(bodyStr, "auth/token") && !strings.Contains(bodyStr, "<Type>7</Type>") {
+			log.Printf("PRE-EMPTIVE ABORT: Server indicates SMS authentication may be required. Aborting automatic login to avoid triggering SMS.")
+			return ErrSMSRequired
+		}
+	}
 
 	vpnMatch := regexp.MustCompile(`<VPNVERSION>(.*)</VPNVERSION>`).FindSubmatch(buf.Bytes())
 	if vpnMatch != nil {
@@ -188,6 +205,7 @@ func (c *EasyConnectClient) loginAuthAndPsw() error {
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
 	if twfIDMatch != nil {
 		c.twfID = string(twfIDMatch[1])
+		c.authTimestamp = time.Now()
 		log.Printf("Update TWFID: %s", c.twfID)
 	}
 
@@ -260,6 +278,7 @@ func (c *EasyConnectClient) loginSMS() error {
 	}
 
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
+	c.authTimestamp = time.Now()
 	log.Print("SMS code verification success")
 
 	return nil
@@ -314,6 +333,7 @@ func (c *EasyConnectClient) loginTOTP() error {
 	}
 
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
+	c.authTimestamp = time.Now()
 	log.Print("TOTP verification success")
 
 	return nil
@@ -441,6 +461,10 @@ func (c *EasyConnectClient) requestResources() (string, error) {
 }
 
 func (c *EasyConnectClient) requestToken() error {
+	if c.twfID == "" {
+		return errors.New("cannot request token with empty TWFID")
+	}
+
 	log.Printf("Requesting token with TWFID: %s", c.twfID)
 
 	dialConn, err := net.Dial("tcp", c.server)
@@ -490,7 +514,11 @@ func (c *EasyConnectClient) requestToken() error {
 		return errors.New("ECAgent request invalid: no response from server (TWFID may have expired)")
 	}
 
-	c.token = (*[48]byte)([]byte(sessionID[:31] + "\x00" + c.twfID))
+	tokenBytes := []byte(sessionID[:31] + "\x00" + c.twfID)
+	if len(tokenBytes) < 48 {
+		return fmt.Errorf("incorrect token length: %d (expected at least 48, twfid might be too short)", len(tokenBytes))
+	}
+	c.token = (*[48]byte)(tokenBytes)
 
 	log.Printf("Token: %s", hex.EncodeToString(c.token[:]))
 
@@ -536,6 +564,7 @@ func (c *EasyConnectClient) requestIP() error {
 		// Provide diagnostic hints based on the reply
 		switch reply[0] {
 		case 0x01:
+		case 0x08:
 			log.Printf("Hint: Reply 0x01 often indicates token expiration or invalid token")
 		case 0xff:
 			log.Printf("Hint: Reply 0xff often indicates authentication failure or session timeout")
@@ -623,8 +652,46 @@ func (c *EasyConnectClient) RefreshToken() error {
 }
 
 // RefreshSession attempts to refresh both token and IP
-// This can be used to recover from token expiration
-func (c *EasyConnectClient) RefreshSession() error {
+// If forceFull is true, it will clear TWFID and perform a full re-login even if session is not old.
+func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
+	// Proactive full re-authentication if the session is old (e.g., > 24 hours)
+	// or if we are explicitly told to force it.
+	isProactive := forceFull || (!c.authTimestamp.IsZero() && time.Since(c.authTimestamp) > 24*time.Hour)
+	var oldTwfID string
+
+	if isProactive {
+		if forceFull {
+			log.Printf("Forced proactive session refresh triggered. Clearing session for fresh login...")
+		} else {
+			log.Printf("Master session (TWFID) is over 24h old (%v). Attempting proactive re-authentication...", time.Since(c.authTimestamp))
+		}
+		oldTwfID = c.twfID
+		oldToken := c.token
+		oldIP := c.ip
+		oldIPReverse := c.ipReverse
+		oldAuthTimestamp := c.authTimestamp
+
+		c.twfID = "" // Clear TWFID to force a fresh login in SetupAuto
+
+		// Directly attempt a full setup for proactive refresh
+		log.Printf("Attempting proactive re-setup...")
+		if setupErr := c.SetupAuto(); setupErr != nil {
+			log.Printf("Proactive re-authentication failed: %v. Reverting to old session.", setupErr)
+			c.twfID = oldTwfID
+			c.token = oldToken
+			c.ip = oldIP
+			c.ipReverse = oldIPReverse
+			c.authTimestamp = oldAuthTimestamp
+
+			// Re-save old session to restore it completely in the session file
+			if c.sessionFile != "" {
+				_ = c.SaveSession(c.sessionFile)
+			}
+			return nil
+		}
+		return nil
+	}
+
 	err := c.requestToken()
 	if err != nil {
 		log.Printf("Token refresh failed: %v. Attempting automatic re-setup...", err)
@@ -641,6 +708,11 @@ func (c *EasyConnectClient) RefreshSession() error {
 
 	err = c.requestIP()
 	if err != nil {
+		if isProactive {
+			log.Printf("requestIP failed during proactive rotation: %v. Reverting to old session.", err)
+			c.twfID = oldTwfID
+			return nil
+		}
 		return err
 	}
 
