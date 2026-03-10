@@ -120,7 +120,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 		log.Printf("VPN DNS failed for %s: %v, trying local DNS", host, err)
 		fallbackCtx, ip, fallbackErr := r.ResolveWithSecondaryDNS(resCtx, host)
 		if fallbackErr == nil {
-			r.setDNSCache(host, ip, nil) // Cache fallback result to avoid thundering herd
+			r.setDNSCache(host, ip, domainRes) // Cache fallback result to avoid thundering herd, retaining domainRes for correct routing
 		}
 		return fallbackCtx, ip, fallbackErr
 	}

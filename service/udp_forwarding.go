@@ -37,7 +37,7 @@ type UDPConnection struct {
 	lastActive time.Time
 }
 
-func newUDPForward(stack stack.Stack, src, dest string) *UDPForward {
+func newUDPForward(stack stack.Stack, src, dest string) (*UDPForward, error) {
 	u := new(UDPForward)
 	u.stack = stack
 	u.connectCallback = func(addr string) {}
@@ -49,22 +49,22 @@ func newUDPForward(stack stack.Stack, src, dest string) *UDPForward {
 	var err error
 	u.src, err = net.ResolveUDPAddr("udp", src)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	host, portStr, err := net.SplitHostPort(dest)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	ip := net.ParseIP(host)
 	if ip == nil {
-		panic(fmt.Errorf("invalid host: %s", host))
+		return nil, fmt.Errorf("invalid host: %s", host)
 	}
 
 	u.dest = &net.UDPAddr{
@@ -74,10 +74,10 @@ func newUDPForward(stack stack.Stack, src, dest string) *UDPForward {
 
 	u.listenerConn, err = net.ListenUDP("udp", u.src)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return u
+	return u, nil
 }
 
 func (u *UDPForward) startUDPForward() {
@@ -144,7 +144,9 @@ func (u *UDPForward) handle(data []byte, addr *net.UDPAddr) {
 
 		if err != nil {
 			log.Println("UDP forward: failed to dial:", err)
+			u.connectionsMutex.Lock()
 			delete(u.connections, addr.String())
+			u.connectionsMutex.Unlock()
 			return
 		}
 
@@ -211,8 +213,12 @@ func (u *UDPForward) handle(data []byte, addr *net.UDPAddr) {
 }
 
 func ServeUDPForwarding(stack stack.Stack, bindAddress string, remoteAddress string) {
-	log.Printf("UDP port forwarding: %s -> %s", bindAddress, remoteAddress)
+	log.Printf("UDP port forwarding initialization: %s -> %s", bindAddress, remoteAddress)
 
-	udpForward := newUDPForward(stack, bindAddress, remoteAddress)
+	udpForward, err := newUDPForward(stack, bindAddress, remoteAddress)
+	if err != nil {
+		log.Printf("Failed to initialize UDP forwarding %s -> %s: %v", bindAddress, remoteAddress, err)
+		return
+	}
 	udpForward.startUDPForward()
 }

@@ -65,7 +65,8 @@ func (c *EasyConnectClient) LoadSession(path string) error {
 
 	// Validate server matches
 	if session.Server != c.server {
-		return errors.New("session server mismatch")
+		log.Printf("Warning: Session server (%s) differs from current config (%s). Reusing session server.", session.Server, c.server)
+		c.server = session.Server
 	}
 
 	// Check if session is too old (e.g., > 24 hours)
@@ -112,8 +113,10 @@ func (c *EasyConnectClient) TryRestoreSession(path string) bool {
 		return false
 	}
 
+	originalServer := c.server
 	err := c.LoadSession(path)
 	if err != nil {
+		c.server = originalServer
 		log.Printf("Failed to load session: %v", err)
 		return false
 	}
@@ -149,6 +152,7 @@ func (c *EasyConnectClient) TryRestoreSession(path string) bool {
 	// If we still have an error after recovery attempts, fail
 	if err != nil {
 		log.Printf("Clearing invalid session data and falling back to full authentication...")
+		c.server = originalServer
 		c.twfID = ""
 		c.token = nil
 		c.ip = nil
@@ -163,13 +167,12 @@ func (c *EasyConnectClient) TryRestoreSession(path string) bool {
 		log.Print("Fetching resources for restored session...")
 		resources, err := c.requestResources()
 		if err != nil {
-			log.Printf("Failed to fetch resources: %v", err)
-			return false
-		}
-		err = c.parseResources(resources)
-		if err != nil {
-			log.Printf("Failed to parse resources: %v", err)
-			return false
+			log.Printf("Warning: Failed to fetch resources: %v. Continuing using cached session.", err)
+		} else {
+			err = c.parseResources(resources)
+			if err != nil {
+				log.Printf("Warning: Failed to parse resources: %v. Continuing using cached session.", err)
+			}
 		}
 	}
 

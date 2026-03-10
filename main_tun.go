@@ -225,6 +225,7 @@ func main() {
 		ipAddr := net.ParseIP(customDns.IP)
 		if ipAddr == nil {
 			log.Printf("Custom DNS for host name %s is invalid, SKIP", customDns.HostName)
+			continue
 		}
 		vpnResolver.SetPermanentDNS(customDns.HostName, ipAddr)
 		log.Printf("Add custom DNS: %s -> %s\n", customDns.HostName, customDns.IP)

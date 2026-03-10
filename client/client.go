@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/mythologyli/zju-connect/log"
@@ -58,6 +59,9 @@ type EasyConnectClient struct {
 
 	ipConn       io.ReadWriteCloser
 	ipConnCancel context.CancelFunc
+
+	refreshMutex    sync.Mutex
+	lastRefreshTime time.Time
 }
 
 // AuthTimestamp returns the time when the current session was authenticated

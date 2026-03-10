@@ -167,11 +167,11 @@ func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Con
 		}
 
 		if strings.Count(ip.String(), ":") > 0 {
-			return d.dialDirectIP(ctx, network, ip.String()+":"+port, addr)
+			return d.dialDirectIP(ctx, network, net.JoinHostPort(ip.String(), port), addr)
 		}
 	}
 
-	return d.DialIPPort(ctx, network, ip.String()+":"+port)
+	return d.DialIPPort(ctx, network, net.JoinHostPort(ip.String(), port))
 }
 
 func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResources []client.IPResource, alwaysUseVPN bool, dialDirectProxy string) *Dialer {

@@ -106,10 +106,18 @@ func (c *EasyConnectClient) loginAuthAndPsw(isAuto bool) error {
 		log.Printf("VPN server version: %s", string(vpnMatch[1]))
 	}
 
-	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
+	twfidMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
+	if len(twfidMatch) < 2 {
+		return errors.New("missing TwfID in server response (might be an unexpected page)")
+	}
+	c.twfID = string(twfidMatch[1])
 	log.Printf("TWFID: %s", c.twfID)
 
-	rsaKey := string(regexp.MustCompile(`<RSA_ENCRYPT_KEY>(.*)</RSA_ENCRYPT_KEY>`).FindSubmatch(buf.Bytes())[1])
+	rsaKeyMatch := regexp.MustCompile(`<RSA_ENCRYPT_KEY>(.*)</RSA_ENCRYPT_KEY>`).FindSubmatch(buf.Bytes())
+	if len(rsaKeyMatch) < 2 {
+		return errors.New("missing RSA_ENCRYPT_KEY in server response (might be an unexpected page)")
+	}
+	rsaKey := string(rsaKeyMatch[1])
 	log.Printf("RSA key: %s", rsaKey)
 
 	rsaExpMatch := regexp.MustCompile(`<RSA_ENCRYPT_EXP>(.*)</RSA_ENCRYPT_EXP>`).FindSubmatch(buf.Bytes())
@@ -277,7 +285,11 @@ func (c *EasyConnectClient) loginSMS() error {
 		return errors.New("SMS code verification failed: " + buf.String())
 	}
 
-	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
+	twfidMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
+	if len(twfidMatch) < 2 {
+		return errors.New("missing TwfID in SMS verification response")
+	}
+	c.twfID = string(twfidMatch[1])
 	c.authTimestamp = time.Now()
 	log.Print("SMS code verification success")
 
@@ -332,7 +344,11 @@ func (c *EasyConnectClient) loginTOTP() error {
 		return errors.New("TOTP verification failed: " + buf.String())
 	}
 
-	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
+	twfidMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
+	if len(twfidMatch) < 2 {
+		return errors.New("missing TwfID in TOTP verification response")
+	}
+	c.twfID = string(twfidMatch[1])
 	c.authTimestamp = time.Now()
 	log.Print("TOTP verification success")
 
@@ -654,6 +670,16 @@ func (c *EasyConnectClient) RefreshToken() error {
 // RefreshSession attempts to refresh both token and IP
 // If forceFull is true, it will clear TWFID and perform a full re-login even if session is not old.
 func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
+	c.refreshMutex.Lock()
+	defer c.refreshMutex.Unlock()
+
+	// Singleflight: If multiple goroutines trigger RefreshSession simultaneously,
+	// only the first one executes it. Others will exit gracefully upon acquiring the lock.
+	if time.Since(c.lastRefreshTime) < 15*time.Second {
+		log.Printf("Session was completely refreshed within the last 15s. Skipping duplicate refresh to prevent overlapping handshake errors.")
+		return nil
+	}
+
 	// Proactive full re-authentication if the session is old (e.g., > 24 hours)
 	// or if we are explicitly told to force it.
 	isProactive := forceFull || (!c.authTimestamp.IsZero() && time.Since(c.authTimestamp) > 24*time.Hour)
@@ -687,8 +713,9 @@ func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
 			if c.sessionFile != "" {
 				_ = c.SaveSession(c.sessionFile)
 			}
-			return nil
+			return setupErr
 		}
+		c.lastRefreshTime = time.Now()
 		return nil
 	}
 
@@ -703,6 +730,7 @@ func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
 			}
 			return fmt.Errorf("auto setup failed: %w (original: %v)", setupErr, err)
 		}
+		c.lastRefreshTime = time.Now()
 		return nil // SetupAuto already calls requestIP and saves session
 	}
 
@@ -723,5 +751,6 @@ func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
 		}
 	}
 
+	c.lastRefreshTime = time.Now()
 	return nil
 }

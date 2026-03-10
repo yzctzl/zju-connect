@@ -64,9 +64,14 @@ func (c *EasyConnectClient) tlsConn() (*tls.UConn, error) {
 
 // RecvConn create a special TLS connection to receive data from the VPN server
 func (c *EasyConnectClient) RecvConn() (*tls.UConn, error) {
+	c.refreshMutex.Lock()
 	if c.token == nil {
+		c.refreshMutex.Unlock()
 		return nil, errors.New("token is nil")
 	}
+	token := *c.token
+	ipReverse := append([]byte(nil), c.ipReverse...)
+	c.refreshMutex.Unlock()
 
 	conn, err := c.tlsConn()
 	if err != nil {
@@ -75,9 +80,9 @@ func (c *EasyConnectClient) RecvConn() (*tls.UConn, error) {
 
 	// RECV STREAM START
 	message := []byte{0x06, 0x00, 0x00, 0x00}
-	message = append(message, c.token[:]...)
+	message = append(message, token[:]...)
 	message = append(message, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...)
-	message = append(message, c.ipReverse[:]...)
+	message = append(message, ipReverse...)
 
 	n, err := conn.Write(message)
 	if err != nil {
@@ -103,9 +108,14 @@ func (c *EasyConnectClient) RecvConn() (*tls.UConn, error) {
 
 // SendConn create a special TLS connection to send data to the VPN server
 func (c *EasyConnectClient) SendConn() (*tls.UConn, error) {
+	c.refreshMutex.Lock()
 	if c.token == nil {
+		c.refreshMutex.Unlock()
 		return nil, errors.New("token is nil")
 	}
+	token := *c.token
+	ipReverse := append([]byte(nil), c.ipReverse...)
+	c.refreshMutex.Unlock()
 
 	conn, err := c.tlsConn()
 	if err != nil {
@@ -114,9 +124,9 @@ func (c *EasyConnectClient) SendConn() (*tls.UConn, error) {
 
 	// SEND STREAM START
 	message := []byte{0x05, 0x00, 0x00, 0x00}
-	message = append(message, c.token[:]...)
+	message = append(message, token[:]...)
 	message = append(message, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...)
-	message = append(message, c.ipReverse[:]...)
+	message = append(message, ipReverse...)
 
 	n, err := conn.Write(message)
 	if err != nil {

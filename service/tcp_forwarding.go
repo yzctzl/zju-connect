@@ -16,7 +16,9 @@ func handleRequest(stack stack.Stack, conn net.Conn, remoteAddress string) {
 	host := parts[0]
 	port, err := strconv.Atoi(parts[1])
 	if err != nil {
-		panic(err)
+		log.Printf("Port forwarding (TCP) invalid port: %v", err)
+		_ = conn.Close()
+		return
 	}
 
 	proxy, err := stack.DialTCP(&net.TCPAddr{
@@ -24,7 +26,9 @@ func handleRequest(stack stack.Stack, conn net.Conn, remoteAddress string) {
 		Port: port,
 	})
 	if err != nil {
-		panic(err)
+		log.Printf("Port forwarding (TCP) failed to dial %s: %v", remoteAddress, err)
+		_ = conn.Close()
+		return
 	}
 
 	go copyIO(conn, proxy)
@@ -44,7 +48,7 @@ func copyIO(src, dest net.Conn) {
 func ServeTCPForwarding(stack stack.Stack, bindAddress string, remoteAddress string) {
 	ln, err := net.Listen("tcp", bindAddress)
 	if err != nil {
-		panic(err)
+		log.Fatalf("TCP port forwarding listen failed: %v", err)
 	}
 
 	log.Printf("TCP port forwarding: %s -> %s", bindAddress, remoteAddress)
@@ -52,7 +56,8 @@ func ServeTCPForwarding(stack stack.Stack, bindAddress string, remoteAddress str
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			panic(err)
+			log.Printf("TCP port forwarding accept error: %v", err)
+			continue
 		}
 
 		go handleRequest(stack, conn, remoteAddress)
