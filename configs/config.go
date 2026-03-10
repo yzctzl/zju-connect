@@ -15,6 +15,8 @@ type (
 		DisableZJUDNS       bool
 		DisableMultiLine    bool
 		ProxyAll            bool
+		UpstreamOnly        bool
+		UpstreamDNSMode     string
 		SocksBind           string
 		SocksUser           string
 		SocksPasswd         string
@@ -65,6 +67,8 @@ type (
 		DisableZJUDNS       *bool                      `toml:"disable_zju_dns"`
 		DisableMultiLine    *bool                      `toml:"disable_multi_line"`
 		ProxyAll            *bool                      `toml:"proxy_all"`
+		UpstreamOnly        *bool                      `toml:"upstream_only"`
+		UpstreamDNSMode     *string                    `toml:"upstream_dns_mode"`
 		SocksBind           *string                    `toml:"socks_bind"`
 		SocksUser           *string                    `toml:"socks_user"`
 		SocksPasswd         *string                    `toml:"socks_passwd"`

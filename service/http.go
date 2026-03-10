@@ -85,6 +85,9 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 				_, _ = w.Write([]byte(err.Error() + "\n"))
 				return
 			}
+			defer func() {
+				_ = resp.Body.Close()
+			}()
 
 			hdr := w.Header()
 			for k, v := range resp.Header {
@@ -100,6 +103,6 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 	log.Printf("%s", "HTTP server listening on " + bindAddr)
 
 	if err := http.ListenAndServe(bindAddr, handlerFunc); err != nil {
-		panic("HTTP listen failed: " + err.Error())
+		log.Printf("HTTP listen failed: %v", err)
 	}
 }

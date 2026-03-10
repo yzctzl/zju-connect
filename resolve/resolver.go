@@ -28,6 +28,7 @@ type Resolver struct {
 	domainResources   map[string]client.DomainResource
 	dnsResource       map[string]net.IP
 	useRemoteDNS      bool
+	upstreamDNSMode   string
 
 	dnsCache *cache.Cache
 
@@ -57,11 +58,22 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 		}
 	}()
 
+	// Determine VPN domain before touching cache/static DNS so cached answers
+	// still restore the correct routing context.
+	var domainRes *client.DomainResource
+	isVPNDomain := r.matchVPNDomain(host, &domainRes)
+	if isVPNDomain && domainRes != nil {
+		resCtx = context.WithValue(resCtx, ContextKeyDomainResource, *domainRes)
+		log.DebugPrintf("Domain %s matched VPN resource", host)
+	}
+
 	// 1. Check Cache FIRST (fastest path)
 	if entry, found := r.getDNSCache(host); found {
 		log.DebugPrintf("%s -> %s (Cache)", host, entry.IP.String())
 		if entry.DomainResource != nil {
 			resCtx = context.WithValue(resCtx, ContextKeyDomainResource, *entry.DomainResource)
+		} else if domainRes != nil {
+			resCtx = context.WithValue(resCtx, ContextKeyDomainResource, *domainRes)
 		}
 		return resCtx, entry.IP, nil
 	}
@@ -70,19 +82,21 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	if r.dnsResource != nil {
 		if ip, found := r.dnsResource[host]; found {
 			log.DebugPrintf("%s -> %s (Static)", host, ip.String())
+			if domainRes != nil {
+				resCtx = context.WithValue(resCtx, ContextKeyDomainResource, *domainRes)
+			}
 			return resCtx, ip, nil
 		}
 	}
 
-	// 3. Determine VPN domain and extract resource
-	var domainRes *client.DomainResource
-	isVPNDomain := r.matchVPNDomain(host, &domainRes)
-	if isVPNDomain && domainRes != nil {
-		resCtx = context.WithValue(resCtx, ContextKeyDomainResource, *domainRes)
-		log.DebugPrintf("Domain %s matched VPN resource", host)
+	switch r.upstreamDNSMode {
+	case "remote-only":
+		return r.resolveWithRemoteDNS(resCtx, host, domainRes, false)
+	case "remote-first":
+		return r.resolveWithRemoteDNS(resCtx, host, domainRes, true)
 	}
 
-	// 4. Decide DNS resolver based on split DNS policy
+	// 3. Decide DNS resolver based on split DNS policy
 	// VPN domains MUST use VPN DNS; others use local DNS unless forced
 	shouldUseVPNResolver := isVPNDomain || r.useRemoteDNS
 
@@ -91,7 +105,11 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 		return r.ResolveWithSecondaryDNS(resCtx, host)
 	}
 
-	// 5. Remote DNS Resolution with singleflight pattern
+	return r.resolveWithRemoteDNS(resCtx, host, domainRes, true)
+}
+
+func (r *Resolver) resolveWithRemoteDNS(ctx context.Context, host string, domainRes *client.DomainResource, allowLocalFallback bool) (context.Context, net.IP, error) {
+	// Remote DNS Resolution with singleflight pattern
 	resultItem, loaded := r.concurResolveLock.LoadOrStore(host, &resolveResult{
 		done: make(chan struct{}),
 	})
@@ -113,14 +131,18 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 		if err == nil {
 			r.setDNSCache(host, ip, domainRes)
 			log.DebugPrintf("%s -> %s (VPN DNS)", host, ip.String())
-			return resCtx, ip, nil
+			return ctx, ip, nil
+		}
+
+		if !allowLocalFallback {
+			return ctx, nil, err
 		}
 
 		// VPN DNS failed, fallback to secondary
 		log.Printf("VPN DNS failed for %s: %v, trying local DNS", host, err)
-		fallbackCtx, ip, fallbackErr := r.ResolveWithSecondaryDNS(resCtx, host)
+		fallbackCtx, ip, fallbackErr := r.ResolveWithSecondaryDNS(ctx, host)
 		if fallbackErr == nil {
-			r.setDNSCache(host, ip, domainRes) // Cache fallback result to avoid thundering herd, retaining domainRes for correct routing
+			r.setDNSCache(host, ip, domainRes)
 		}
 		return fallbackCtx, ip, fallbackErr
 	}
@@ -129,20 +151,26 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	select {
 	case <-result.done:
 	case <-ctx.Done():
-		return resCtx, nil, ctx.Err()
+		return ctx, nil, ctx.Err()
 	}
 
 	// Check cache after the resolving goroutine has completed
 	if entry, found := r.getDNSCache(host); found {
 		log.DebugPrintf("%s -> %s (VPN DNS, from concurrent resolution)", host, entry.IP.String())
 		if entry.DomainResource != nil {
-			resCtx = context.WithValue(resCtx, ContextKeyDomainResource, *entry.DomainResource)
+			ctx = context.WithValue(ctx, ContextKeyDomainResource, *entry.DomainResource)
+		} else if domainRes != nil {
+			ctx = context.WithValue(ctx, ContextKeyDomainResource, *domainRes)
 		}
-		return resCtx, entry.IP, nil
+		return ctx, entry.IP, nil
+	}
+
+	if !allowLocalFallback {
+		return ctx, nil, fmt.Errorf("VPN DNS resolution failed for %s", host)
 	}
 
 	// Concurrent resolution failed, try secondary as fallback
-	return r.ResolveWithSecondaryDNS(resCtx, host)
+	return r.ResolveWithSecondaryDNS(ctx, host)
 }
 
 // matchVPNDomain checks if host matches any VPN domain resource
@@ -292,7 +320,7 @@ func (r *Resolver) CleanCache(duration time.Duration) {
 	select {}
 }
 
-func NewResolver(stack stack.Stack, remoteDNSServers []string, secondaryDNSServer string, ttl uint64, domainResources map[string]client.DomainResource, dnsResource map[string]net.IP, useRemoteDNS bool) *Resolver {
+func NewResolver(stack stack.Stack, remoteDNSServers []string, secondaryDNSServer string, ttl uint64, domainResources map[string]client.DomainResource, dnsResource map[string]net.IP, useRemoteDNS bool, upstreamDNSMode string) *Resolver {
 	resolver := &Resolver{
 		remoteDNSServers: remoteDNSServers,
 		stack:            stack,
@@ -301,6 +329,7 @@ func NewResolver(stack stack.Stack, remoteDNSServers []string, secondaryDNSServe
 		dnsResource:      dnsResource,
 		dnsCache:         cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
 		useRemoteDNS:     useRemoteDNS,
+		upstreamDNSMode:  upstreamDNSMode,
 	}
 
 	if secondaryDNSServer != "" {

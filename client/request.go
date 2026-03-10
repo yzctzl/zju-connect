@@ -172,15 +172,15 @@ func (c *EasyConnectClient) loginAuthAndPsw(isAuto bool) error {
 	if err != nil {
 		return err
 	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	buf.Reset()
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	if strings.Contains(buf.String(), "<NextService>auth/sms</NextService>") || strings.Contains(buf.String(), "<NextAuth>2</NextAuth>") {
 		log.Print("SMS code required")
@@ -233,16 +233,15 @@ func (c *EasyConnectClient) loginSMS() error {
 	if err != nil {
 		return err
 	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var buf bytes.Buffer
-	buf.Reset()
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	if !strings.Contains(buf.String(), "验证码已发送到您的手机") && !strings.Contains(buf.String(), "<USER_PHONE>") {
 		return errors.New("unexpected SMS response: " + buf.String())
@@ -271,14 +270,15 @@ func (c *EasyConnectClient) loginSMS() error {
 	if err != nil {
 		return err
 	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
+	buf.Reset()
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	if !strings.Contains(buf.String(), "Auth sms suc") {
 		debug.PrintStack()
@@ -328,16 +328,15 @@ func (c *EasyConnectClient) loginTOTP() error {
 	if err != nil {
 		return err
 	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var buf bytes.Buffer
-	buf.Reset()
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	if !strings.Contains(buf.String(), "Totp auth succ") {
 		debug.PrintStack()
@@ -369,16 +368,15 @@ func (c *EasyConnectClient) loginCert() error {
 	if err != nil {
 		return err
 	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var buf bytes.Buffer
-	buf.Reset()
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	caCertPool := x509.NewCertPool()
 	ok := caCertPool.AppendCertsFromPEM(buf.Bytes())
@@ -408,15 +406,15 @@ func (c *EasyConnectClient) loginCert() error {
 	if err != nil {
 		return err
 	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	buf.Reset()
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	if !strings.Contains(buf.String(), "<Result>1</Result>") {
 		debug.PrintStack()
@@ -439,15 +437,15 @@ func (c *EasyConnectClient) requestConfig() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return "", err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	return buf.String(), nil
 }
@@ -463,15 +461,15 @@ func (c *EasyConnectClient) requestResources() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, resp.Body)
 	if err != nil {
 		return "", err
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
 
 	return buf.String(), nil
 }
@@ -571,6 +569,15 @@ func (c *EasyConnectClient) requestIP() error {
 	log.DebugPrintf("Request IP: read %d bytes", n)
 	log.DebugDumpHex(reply[:n])
 
+	if n < 8 {
+		_ = conn.Close()
+		log.Printf("Request IP reply too short: got %d bytes, need at least 8", n)
+		if n > 0 {
+			log.DumpHex(reply[:n])
+		}
+		return errors.New("request IP reply too short")
+	}
+
 	if reply[0] != 0x00 {
 		_ = conn.Close()
 		log.Printf("Unexpected request IP reply (first byte: 0x%02x, expected: 0x00)", reply[0])
@@ -579,9 +586,8 @@ func (c *EasyConnectClient) requestIP() error {
 
 		// Provide diagnostic hints based on the reply
 		switch reply[0] {
-		case 0x01:
-		case 0x08:
-			log.Printf("Hint: Reply 0x01 often indicates token expiration or invalid token")
+		case 0x01, 0x08:
+			log.Printf("Hint: Reply 0x%02x often indicates token expiration or invalid token", reply[0])
 		case 0xff:
 			log.Printf("Hint: Reply 0xff often indicates authentication failure or session timeout")
 		}

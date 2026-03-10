@@ -41,6 +41,8 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DisableZJUDNS = getTOMLVal(confTOML.DisableZJUDNS, false)
 	conf.DisableMultiLine = getTOMLVal(confTOML.DisableMultiLine, false)
 	conf.ProxyAll = getTOMLVal(confTOML.ProxyAll, false)
+	conf.UpstreamOnly = getTOMLVal(confTOML.UpstreamOnly, false)
+	conf.UpstreamDNSMode = getTOMLVal(confTOML.UpstreamDNSMode, "auto")
 	conf.SocksBind = getTOMLVal(confTOML.SocksBind, ":1080")
 	conf.SocksUser = getTOMLVal(confTOML.SocksUser, "")
 	conf.SocksPasswd = getTOMLVal(confTOML.SocksPasswd, "")
@@ -124,6 +126,8 @@ func init() {
 	flag.BoolVar(&conf.DisableZJUDNS, "disable-zju-dns", false, "Use local DNS instead of ZJU DNS")
 	flag.BoolVar(&conf.DisableMultiLine, "disable-multi-line", false, "Disable multi line auto select")
 	flag.BoolVar(&conf.ProxyAll, "proxy-all", false, "Proxy all IPv4 traffic")
+	flag.BoolVar(&conf.UpstreamOnly, "upstream-only", false, "Run as a pure upstream proxy: all dialer traffic must go through VPN and direct fallback is disabled")
+	flag.StringVar(&conf.UpstreamDNSMode, "upstream-dns-mode", "auto", "DNS strategy for upstream-only mode: auto, remote-first, remote-only")
 	flag.StringVar(&conf.SocksBind, "socks-bind", ":1080", "The address SOCKS5 server listens on (e.g. 127.0.0.1:1080)")
 	flag.StringVar(&conf.SocksUser, "socks-user", "", "SOCKS5 username, default is don't use auth")
 	flag.StringVar(&conf.SocksPasswd, "socks-passwd", "", "SOCKS5 password, default is don't use auth")
@@ -233,6 +237,13 @@ func init() {
 		fmt.Println("\nFull usage:")
 		flag.PrintDefaults()
 
+		os.Exit(1)
+	}
+
+	switch conf.UpstreamDNSMode {
+	case "auto", "remote-first", "remote-only":
+	default:
+		fmt.Printf("ZJU Connect: invalid upstream DNS mode %q, allowed values: auto, remote-first, remote-only\n", conf.UpstreamDNSMode)
 		os.Exit(1)
 	}
 }

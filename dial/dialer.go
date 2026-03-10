@@ -17,12 +17,13 @@ import (
 )
 
 type Dialer struct {
-	stack                stack.Stack
-	resolver             *resolve.Resolver
-	ipResources          []client.IPResource
-	alwaysUseVPN         bool
-	dialDirectHTTPProxy  string // format: "ip:port"
-	dialDirectSocksProxy string // WORKING IN PROCESS
+	stack                 stack.Stack
+	resolver              *resolve.Resolver
+	ipResources           []client.IPResource
+	alwaysUseVPN          bool
+	disableDirectFallback bool
+	dialDirectHTTPProxy   string // format: "ip:port"
+	dialDirectSocksProxy  string // WORKING IN PROCESS
 }
 
 // dialDirectIP need have a `hostAddr` parameter, which will be passed to PROXY. But `hostAddr` maybe empty, ipAddr never be empty.
@@ -72,6 +73,9 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 
 	// If addr is IPv6, use direct connection
 	if len(parts) > 2 {
+		if d.disableDirectFallback {
+			return nil, errors.New("IPv6 is not supported in upstream-only mode")
+		}
 		return d.dialDirectIP(ctx, network, ipAddr, hostAddr)
 	}
 
@@ -141,9 +145,15 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 			})
 		default:
 			log.Printf("VPN only support TCP/UDP. Connection to %s will use direct connection", ipAddr)
+			if d.disableDirectFallback {
+				return nil, errors.New("only TCP/UDP are supported in upstream-only mode")
+			}
 			return d.dialDirectIP(ctx, network, ipAddr, hostAddr)
 		}
 	} else {
+		if d.disableDirectFallback {
+			return nil, errors.New("no matching VPN rule in upstream-only mode for " + ipAddr)
+		}
 		return d.dialDirectIP(ctx, network, ipAddr, hostAddr)
 	}
 }
@@ -151,11 +161,17 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Conn, error) {
 	// If addr is IPv6, use direct connection
 	if strings.Count(addr, ":") > 1 {
+		if d.disableDirectFallback {
+			return nil, errors.New("IPv6 is not supported in upstream-only mode")
+		}
 		return d.dialDirectIP(ctx, network, addr, "")
 	}
 
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
+		if d.disableDirectFallback {
+			return nil, err
+		}
 		return d.dialDirectHost(ctx, network, addr)
 	}
 
@@ -163,10 +179,16 @@ func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Con
 	if ip = net.ParseIP(host); ip == nil {
 		ctx, ip, err = d.resolver.Resolve(ctx, host)
 		if err != nil {
+			if d.disableDirectFallback {
+				return nil, err
+			}
 			return d.dialDirectHost(ctx, network, addr)
 		}
 
 		if strings.Count(ip.String(), ":") > 0 {
+			if d.disableDirectFallback {
+				return nil, errors.New("IPv6 is not supported in upstream-only mode")
+			}
 			return d.dialDirectIP(ctx, network, net.JoinHostPort(ip.String(), port), addr)
 		}
 	}
@@ -174,7 +196,7 @@ func (d *Dialer) Dial(ctx context.Context, network string, addr string) (net.Con
 	return d.DialIPPort(ctx, network, net.JoinHostPort(ip.String(), port))
 }
 
-func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResources []client.IPResource, alwaysUseVPN bool, dialDirectProxy string) *Dialer {
+func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResources []client.IPResource, alwaysUseVPN bool, disableDirectFallback bool, dialDirectProxy string) *Dialer {
 	dialHttpProxy := ""
 	dialSocksProxy := ""
 	if strings.HasPrefix(dialDirectProxy, "http://") {
@@ -185,11 +207,12 @@ func NewDialer(stack stack.Stack, resolver *resolve.Resolver, ipResources []clie
 		log.Println("暂不支持除[http/socks]之外的DialDirectProxy，忽略该配置项")
 	}
 	return &Dialer{
-		stack:                stack,
-		resolver:             resolver,
-		ipResources:          ipResources,
-		alwaysUseVPN:         alwaysUseVPN,
-		dialDirectHTTPProxy:  dialHttpProxy,
-		dialDirectSocksProxy: dialSocksProxy,
+		stack:                 stack,
+		resolver:              resolver,
+		ipResources:           ipResources,
+		alwaysUseVPN:          alwaysUseVPN,
+		disableDirectFallback: disableDirectFallback,
+		dialDirectHTTPProxy:   dialHttpProxy,
+		dialDirectSocksProxy:  dialSocksProxy,
 	}
 }

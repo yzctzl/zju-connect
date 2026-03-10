@@ -87,11 +87,15 @@
 
 + `disable-zju-config`: Disable ZJU related configuration, generally no need to add this argument
 
-+ `disable-zju-dns`: Disable ZJU DNS and use local DNS, generally no need to add this argument
++ `disable-zju-dns`: Disable ZJU DNS and use local DNS, generally no need to add this argument. Disabling it only disables remote DNS probing now; web-session keep-alive and proactive session refresh still work. If `upstream-dns-mode` is `remote-first` or `remote-only`, ZJU DNS must remain available
 
 + `disable-multi-line`: Disable automatic line selection based on latency. After adding this argument, use the line specified by the `server` parameter
 
 + `proxy-all`: Whether to proxy all traffic, generally no need to add this argument
+
++ `upstream-only`: Turn zju-connect into a pure EasyConnect upstream proxy. When enabled, traffic from HTTP/SOCKS/Shadowsocks listeners is forced through VPN and internal `direct` fallback is disabled. This is intended for using `gost`, `mihomo`, or similar tools outside zju-connect for split-routing
+
++ `upstream-dns-mode`: DNS strategy for upstream mode. Supported values are `auto`, `remote-first`, and `remote-only`. The default is `auto`; when `upstream-only=true`, it behaves as `remote-first` by default
 
 + `socks-bind`: SOCKS5 proxy listening address, default is `:1080`
 
@@ -103,7 +107,7 @@
 
 + `shadowsocks-url`: Shadowsocks server URL. For example: `ss://aes-128-gcm:password@server:port`. Format [refer to here](https://github.com/shadowsocks/go-shadowsocks2)
 
-+ `dial-direct-proxy`: When a URL does not match RVPN rules and switches to direct connection, it uses a proxy, typically in scenarios where it works in conjunction with other proxy tools. Currently, only HTTP proxies are supported. For example: `http://127.0.0.1:7890`, setting it to empty string (`""`) will disable its use.
++ `dial-direct-proxy`: When a URL does not match RVPN rules and switches to direct connection, it uses a proxy, typically in scenarios where it works in conjunction with other proxy tools. Currently, only HTTP proxies are supported. For example: `http://127.0.0.1:7890`, setting it to empty string (`""`) will disable its use. It is ignored when `upstream-only=true`
 
 + `tun-mode`: TUN mode (experimental). Please read the TUN mode precautions below
 

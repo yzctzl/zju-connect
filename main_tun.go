@@ -211,6 +211,17 @@ func main() {
 		}
 	}
 
+	effectiveUpstreamDNSMode := conf.UpstreamDNSMode
+	if conf.UpstreamOnly && effectiveUpstreamDNSMode == "auto" {
+		effectiveUpstreamDNSMode = "remote-first"
+	}
+	if (effectiveUpstreamDNSMode == "remote-first" || effectiveUpstreamDNSMode == "remote-only") && !useZJUDNS {
+		log.Fatalf("upstream DNS mode %q requires ZJU DNS to be enabled and available", effectiveUpstreamDNSMode)
+	}
+	if conf.UpstreamOnly && conf.DialDirectProxy != "" {
+		log.Println("upstream-only is enabled, dial-direct-proxy will be ignored")
+	}
+
 	vpnResolver := resolve.NewResolver(
 		vpnStack,
 		zjuDNSServers,
@@ -219,6 +230,7 @@ func main() {
 		domainResources,
 		dnsResource,
 		useZJUDNS,
+		effectiveUpstreamDNSMode,
 	)
 
 	for _, customDns := range conf.CustomDNSList {
@@ -237,7 +249,7 @@ func main() {
 
 	go vpnStack.Run()
 
-	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResources, conf.ProxyAll, conf.DialDirectProxy)
+	vpnDialer := dial.NewDialer(vpnStack, vpnResolver, ipResources, conf.ProxyAll || conf.UpstreamOnly, conf.UpstreamOnly, conf.DialDirectProxy)
 
 	if conf.DNSServerBind != "" {
 		go service.ServeDNS(conf.DNSServerBind, localResolver)
@@ -268,11 +280,7 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		if !useZJUDNS {
-			log.Println("Keep alive is disabled because ZJU DNS is disabled")
-		} else {
-			go service.KeepAlive(vpnClient, vpnResolver, conf.KeepAliveDomain)
-		}
+		go service.KeepAlive(vpnClient, vpnResolver, conf.KeepAliveDomain)
 	}
 
 	quit := make(chan os.Signal)

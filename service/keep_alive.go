@@ -12,50 +12,59 @@ import (
 
 func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver, keepAliveDomain string) {
 	var remoteUDPResolver *net.Resolver
-	var err error
+	remoteResolverRetryAt := time.Time{}
 
-	// Retry loop for creating resolver
-	backoff := time.Second
-	maxBackoff := 5 * time.Minute
-	for {
+	tryRemoteResolver := func() {
+		if !remoteResolverRetryAt.IsZero() && time.Now().Before(remoteResolverRetryAt) {
+			return
+		}
+
+		var err error
 		remoteUDPResolver, err = resolver.RemoteUDPResolver()
-		if err == nil {
-			break
+		if err != nil {
+			remoteUDPResolver = nil
+			remoteResolverRetryAt = time.Now().Add(5 * time.Minute)
+			log.Printf("KeepAlive: remote DNS probe disabled for now: %v", err)
+			return
 		}
-		log.Printf("KeepAlive: failed to create resolver: %v. Retrying in %v...", err, backoff)
-		time.Sleep(backoff)
-		backoff = backoff * 2
-		if backoff > maxBackoff {
-			backoff = maxBackoff
-		}
+
+		remoteResolverRetryAt = time.Time{}
 	}
+
+	tryRemoteResolver()
 
 	consecutiveFailures := 0
 	lastWebKeepAlive := time.Now()
 	lastAttemptFullRefresh := time.Time{} // Track the last time we tried a full refresh
 
 	for {
-		_, err := remoteUDPResolver.LookupIP(context.Background(), "ip4", keepAliveDomain)
-		if err != nil {
-			consecutiveFailures++
-			log.Printf("KeepAlive: %s (consecutive failures: %d)", err, consecutiveFailures)
+		if remoteUDPResolver == nil {
+			tryRemoteResolver()
+		}
 
-			// If too many consecutive failures, try to recreate the resolver
-			if consecutiveFailures >= 5 {
-				log.Printf("KeepAlive: too many consecutive failures, attempting to recreate resolver...")
-				newResolver, newErr := resolver.RemoteUDPResolver()
-				if newErr == nil {
-					remoteUDPResolver = newResolver
+		if remoteUDPResolver != nil {
+			_, err := remoteUDPResolver.LookupIP(context.Background(), "ip4", keepAliveDomain)
+			if err != nil {
+				consecutiveFailures++
+				log.Printf("KeepAlive: %s (consecutive failures: %d)", err, consecutiveFailures)
+
+				// If too many consecutive failures, try to recreate the resolver
+				if consecutiveFailures >= 5 {
+					log.Printf("KeepAlive: too many consecutive failures, attempting to recreate resolver...")
+					remoteUDPResolver = nil
 					consecutiveFailures = 0
-					log.Printf("KeepAlive: resolver recreated successfully")
+					tryRemoteResolver()
+					if remoteUDPResolver != nil {
+						log.Printf("KeepAlive: resolver recreated successfully")
+					}
 				}
+			} else {
+				if consecutiveFailures > 0 {
+					log.Printf("KeepAlive: recovered after %d failures", consecutiveFailures)
+				}
+				consecutiveFailures = 0
+				log.DebugPrintf("KeepAlive: OK")
 			}
-		} else {
-			if consecutiveFailures > 0 {
-				log.Printf("KeepAlive: recovered after %d failures", consecutiveFailures)
-			}
-			consecutiveFailures = 0
-			log.DebugPrintf("KeepAlive: OK")
 		}
 
 		// Refresh web session every 30 minutes

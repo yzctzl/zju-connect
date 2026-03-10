@@ -116,11 +116,15 @@
 
 + `disable-zju-config`: 禁用 ZJU 相关配置，一般不需要加此参数
 
-+ `disable-zju-dns`: 禁用 ZJU DNS 改用本地 DNS，一般不需要加此参数。注意当前实现下，这也会关闭依赖远端 DNS 的定时保活和主动会话刷新
++ `disable-zju-dns`: 禁用 ZJU DNS 改用本地 DNS，一般不需要加此参数。关闭后只会禁用远端 DNS 探活，不再关闭网页 Session 保活和主动会话刷新；如果 `upstream-dns-mode` 使用 `remote-first` 或 `remote-only`，则必须保持 ZJU DNS 可用
 
 + `disable-multi-line`: 禁用自动根据延时选择线路。加此参数后，使用 `server` 参数指定的线路
 
 + `proxy-all`: 是否代理所有流量，一般不需要加此参数
+
++ `upstream-only`: 将 zju-connect 收敛为纯 EasyConnect 上游代理。开启后，HTTP/SOCKS/Shadowsocks 等入口的拨号都会强制走 VPN，并禁止内部 `direct` 兜底，适合在外层配合 `gost`、`mihomo` 等工具做分流
+
++ `upstream-dns-mode`: 上游模式下的 DNS 策略，支持 `auto`、`remote-first`、`remote-only`。默认是 `auto`；当 `upstream-only=true` 时，默认等效为 `remote-first`
 
 + `socks-bind`: SOCKS5 代理监听地址，默认为 `:1080`
 
@@ -132,7 +136,7 @@
 
 + `shadowsocks-url`: Shadowsocks 服务端 URL。例如：`ss://aes-128-gcm:password@server:port`。格式[参考此处](https://github.com/shadowsocks/go-shadowsocks2)
 
-+ `dial-direct-proxy`: 当URL未命中RVPN规则，切换到直连时使用代理，常用于与其他代理工具配合的场景，目前仅支持http代理。 例如：`http://127.0.0.1:7890"`，为 `""` 时不启用
++ `dial-direct-proxy`: 当 URL 未命中 RVPN 规则并切换到直连时使用代理，常用于与其他代理工具配合的场景，目前仅支持 http 代理。 例如：`http://127.0.0.1:7890"`，为 `""` 时不启用；`upstream-only=true` 时该参数会被忽略
 
 + `tun-mode`: TUN 模式（实验性）。请阅读后文中的 TUN 模式注意事项
 
