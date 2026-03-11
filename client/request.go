@@ -703,7 +703,7 @@ func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
 		oldIPReverse := c.ipReverse
 		oldAuthTimestamp := c.authTimestamp
 
-		c.twfID = "" // Clear TWFID to force a fresh login in SetupAuto
+		// c.twfID = "" // Clear TWFID to force a fresh login in SetupAuto
 
 		// Directly attempt a full setup for proactive refresh
 		log.Printf("Attempting proactive re-setup...")
