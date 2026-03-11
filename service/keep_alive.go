@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net"
+	"os"
 	"time"
 
 	"github.com/mythologyli/zju-connect/client"
@@ -10,7 +11,7 @@ import (
 	"github.com/mythologyli/zju-connect/resolve"
 )
 
-func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver, keepAliveDomain string) {
+func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver, keepAliveDomain string, maxKeepAlive int) {
 	var remoteUDPResolver *net.Resolver
 	remoteResolverRetryAt := time.Time{}
 
@@ -76,16 +77,25 @@ func KeepAlive(vpnClient *client.EasyConnectClient, resolver *resolve.Resolver, 
 			}
 		}
 
-		// Proactively refresh full session every 12 hours base on ACTUAL session age
+		// Check the hard 7-day limit (or custom limit) for the master TWFID
+		authAge := time.Since(vpnClient.AuthTimestamp())
+		maxKeepAliveDuration := time.Duration(maxKeepAlive) * time.Hour
+		if maxKeepAliveDuration > 0 && authAge > maxKeepAliveDuration {
+			log.Printf("CRITICAL: Master session (TWFID) has exceeded %v hard limit (age: %v). SMS verification is likely required.", maxKeepAliveDuration, authAge)
+			log.Printf("Exiting to allow external supervisor to restart and prompt for SMS.")
+			os.Exit(1)
+		}
+
+		// Proactively refresh Token/IP every 12 hours based on ACTUAL session age
 		// Or if the session is old and we haven't tried recently
-		sessionAge := time.Since(vpnClient.AuthTimestamp())
+		sessionAge := time.Since(vpnClient.SessionTimestamp())
 		if sessionAge >= 12*time.Hour && time.Since(lastAttemptFullRefresh) >= 1*time.Hour {
-			log.Printf("KeepAlive: Proactive session refresh triggered (Session age: %v)", sessionAge)
+			log.Printf("KeepAlive: Proactive session refresh triggered (Token/IP age: %v, TWFID age: %v)", sessionAge, authAge)
 			lastAttemptFullRefresh = time.Now() // Mark attempt before calling to prevent overlaps
 			if rfErr := vpnClient.RefreshSession(true); rfErr != nil {
 				log.Printf("KeepAlive: Proactive session refresh failed: %v. Will retry in 1 hour.", rfErr)
 			} else {
-				log.Printf("KeepAlive: Proactive session refresh successful. New session age: %v", time.Since(vpnClient.AuthTimestamp()))
+				log.Printf("KeepAlive: Proactive session refresh successful. New Token/IP age: %v", time.Since(vpnClient.SessionTimestamp()))
 				// sessionAge will now be small, so it won't trigger until 12h later
 			}
 		}

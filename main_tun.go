@@ -280,7 +280,7 @@ func main() {
 	}
 
 	if !conf.DisableKeepAlive {
-		go service.KeepAlive(vpnClient, vpnResolver, conf.KeepAliveDomain)
+		go service.KeepAlive(vpnClient, vpnResolver, conf.KeepAliveDomain, conf.MaxKeepAlive)
 	}
 
 	quit := make(chan os.Signal)

@@ -750,6 +750,8 @@ func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
 		return err
 	}
 
+	c.sessionTimestamp = time.Now()
+
 	// Save the refreshed session
 	if c.sessionFile != "" {
 		if saveErr := c.SaveSession(c.sessionFile); saveErr != nil {

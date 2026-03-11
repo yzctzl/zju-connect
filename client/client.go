@@ -54,8 +54,9 @@ type EasyConnectClient struct {
 	ip        net.IP // Client IP
 	ipReverse []byte
 
-	authTimestamp time.Time // When the TWFID was initially obtained
-	sessionFile   string    // Path to session file for persistence
+	authTimestamp    time.Time // When the TWFID was initially obtained
+	sessionTimestamp time.Time // When the current IP/Token was secured
+	sessionFile      string    // Path to session file for persistence
 
 	ipConn       io.ReadWriteCloser
 	ipConnCancel context.CancelFunc
@@ -67,6 +68,10 @@ type EasyConnectClient struct {
 // AuthTimestamp returns the time when the current session was authenticated
 func (c *EasyConnectClient) AuthTimestamp() time.Time {
 	return c.authTimestamp
+}
+
+func (c *EasyConnectClient) SessionTimestamp() time.Time {
+	return c.sessionTimestamp
 }
 
 // SetSessionFile sets the path for session persistence
@@ -226,6 +231,8 @@ func (c *EasyConnectClient) setup(isAuto bool) error {
 	if err != nil {
 		return err
 	}
+
+	c.sessionTimestamp = time.Now()
 
 	return nil
 }

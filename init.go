@@ -60,6 +60,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.DNSHijack = getTOMLVal(confTOML.DNSHijack, false)
 	conf.SessionFile = getTOMLVal(confTOML.SessionFile, "")
 	conf.KeepAliveDomain = getTOMLVal(confTOML.KeepAliveDomain, "www.baidu.com")
+	conf.MaxKeepAlive = getTOMLVal(confTOML.MaxKeepAlive, 168)
 
 	for _, singlePortForwarding := range confTOML.PortForwarding {
 		if singlePortForwarding.NetworkType == nil {
@@ -151,6 +152,7 @@ func init() {
 	flag.StringVar(&configFile, "config", "", "Config file")
 	flag.StringVar(&conf.SessionFile, "session-file", "", "Session file path for persistent session storage")
 	flag.StringVar(&conf.KeepAliveDomain, "keep-alive-domain", "www.baidu.com", "Domain used for keep alive check")
+	flag.IntVar(&conf.MaxKeepAlive, "max-keep-alive", 168, "Max keep alive time in hours for the master TWFID session before forcing a restart")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 
 	flag.Parse()

@@ -15,10 +15,11 @@ import (
 type Session struct {
 	TwfID        string    `json:"twfid"`
 	TokenHex     string    `json:"token"`      // hex encoded token
-	IPStr        string    `json:"ip"`         // IP as string
-	IPReverseHex string    `json:"ip_reverse"` // hex encoded reverse IP
-	Timestamp    time.Time `json:"timestamp"`
-	Server       string    `json:"server"`
+	IPStr            string    `json:"ip"`         // IP as string
+	IPReverseHex     string    `json:"ip_reverse"` // hex encoded reverse IP
+	Timestamp        time.Time `json:"timestamp"`  // AuthTimestamp (legacy/primary)
+	SessionTimestamp time.Time `json:"session_timestamp,omitempty"`
+	Server           string    `json:"server"`
 }
 
 // SaveSession saves the current session to a file
@@ -29,11 +30,12 @@ func (c *EasyConnectClient) SaveSession(path string) error {
 
 	session := Session{
 		TwfID:        c.twfID,
-		TokenHex:     hex.EncodeToString(c.token[:]),
-		IPStr:        c.ip.String(),
-		IPReverseHex: hex.EncodeToString(c.ipReverse),
-		Timestamp:    c.authTimestamp,
-		Server:       c.server,
+		TokenHex:         hex.EncodeToString(c.token[:]),
+		IPStr:            c.ip.String(),
+		IPReverseHex:     hex.EncodeToString(c.ipReverse),
+		Timestamp:        c.authTimestamp,
+		SessionTimestamp: c.sessionTimestamp,
+		Server:           c.server,
 	}
 
 	data, err := json.MarshalIndent(session, "", "  ")
@@ -98,9 +100,15 @@ func (c *EasyConnectClient) LoadSession(path string) error {
 	// Apply session data
 	c.twfID = session.TwfID
 	c.token = (*[48]byte)(tokenBytes)
-	c.ip = ip.To4()
+	c.ip = ip
 	c.ipReverse = ipReverse
 	c.authTimestamp = session.Timestamp
+	if !session.SessionTimestamp.IsZero() {
+		c.sessionTimestamp = session.SessionTimestamp
+	} else {
+		// Fallback for old session files
+		c.sessionTimestamp = session.Timestamp
+	}
 
 	log.Printf("Session loaded from %s (age: %v)", path, time.Since(session.Timestamp))
 	return nil

@@ -38,6 +38,7 @@ type (
 		TwfID               string
 		SessionFile         string
 		KeepAliveDomain     string
+		MaxKeepAlive        int
 	}
 
 	SinglePortForwarding struct {
@@ -89,6 +90,7 @@ type (
 		CustomProxyDomain   []string                   `toml:"custom_proxy_domain"`
 		SessionFile         *string                    `toml:"session_file"`
 		KeepAliveDomain     *string                    `toml:"keep_alive_domain"`
+		MaxKeepAlive        *int                       `toml:"max_keep_alive"`
 	}
 
 	SinglePortForwardingTOML struct {
