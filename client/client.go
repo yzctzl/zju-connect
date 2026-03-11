@@ -232,7 +232,5 @@ func (c *EasyConnectClient) setup(isAuto bool) error {
 		return err
 	}
 
-	c.sessionTimestamp = time.Now()
-
 	return nil
 }
