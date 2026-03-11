@@ -539,7 +539,7 @@ func (c *EasyConnectClient) requestToken() error {
 	return nil
 }
 
-func (c *EasyConnectClient) requestIP() error {
+func (c *EasyConnectClient) requestIP(isRestore bool) error {
 	conn, err := c.tlsConn()
 	if err != nil {
 		return err
@@ -620,7 +620,9 @@ func (c *EasyConnectClient) requestIP() error {
 	}(ctx, conn)
 
 	// Auto-save session if sessionFile is configured
-	c.sessionTimestamp = time.Now()
+	if !isRestore {
+		c.sessionTimestamp = time.Now()
+	}
 	if c.sessionFile != "" {
 		if err := c.SaveSession(c.sessionFile); err != nil {
 			log.Printf("Warning: failed to save session: %v", err)
@@ -741,7 +743,7 @@ func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
 		return nil // SetupAuto already calls requestIP and saves session
 	}
 
-	err = c.requestIP()
+	err = c.requestIP(false)
 	if err != nil {
 		if isProactive {
 			log.Printf("requestIP failed during proactive rotation: %v. Reverting to old session.", err)
@@ -749,6 +751,15 @@ func (c *EasyConnectClient) RefreshSession(forceFull bool) error {
 			return nil
 		}
 		return err
+	}
+
+	c.sessionTimestamp = time.Now()
+
+	// Save the refreshed session
+	if c.sessionFile != "" {
+		if saveErr := c.SaveSession(c.sessionFile); saveErr != nil {
+			log.Printf("Warning: failed to save refreshed session: %v", saveErr)
+		}
 	}
 
 	c.lastRefreshTime = time.Now()

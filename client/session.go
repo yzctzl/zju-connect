@@ -135,7 +135,7 @@ func (c *EasyConnectClient) TryRestoreSession(path string) bool {
 	log.Printf("  Token: %x", c.token[:])
 	log.Printf("  IP: %s", c.ip.String())
 
-	err = c.requestIP()
+	err = c.requestIP(true)
 	if err != nil {
 		log.Printf("Session validation failed: %v", err)
 		log.Printf("Attempting to refresh token using existing TWFID...")
@@ -146,7 +146,7 @@ func (c *EasyConnectClient) TryRestoreSession(path string) bool {
 			log.Printf("Token refreshed successfully. New token: %x", c.token[:])
 			log.Printf("Re-validating session with new token...")
 
-			err = c.requestIP()
+			err = c.requestIP(false) // Token was refreshed, so this is no longer a pure restore, it's a new session
 			if err != nil {
 				log.Printf("Session re-validation failed after token refresh: %v", err)
 				log.Printf("The server rejected the new token.")

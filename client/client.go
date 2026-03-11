@@ -227,9 +227,18 @@ func (c *EasyConnectClient) setup(isAuto bool) error {
 	}
 
 	// Finally, use the token to get client IP
-	err = c.requestIP()
+	err = c.requestIP(false)
 	if err != nil {
 		return err
+	}
+
+	c.sessionTimestamp = time.Now()
+
+	// If sessionFile is configured, we save the very first successful setup
+	if c.sessionFile != "" {
+		if err := c.SaveSession(c.sessionFile); err != nil {
+			log.Printf("Warning: failed to save initial session: %v", err)
+		}
 	}
 
 	return nil
